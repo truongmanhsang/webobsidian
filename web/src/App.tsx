@@ -45,15 +45,23 @@ export default function App() {
     // websocket live updates
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    let treeTimer: number | undefined;
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.type === 'fs') loadTree();
+        if (msg.type === 'fs') {
+          // coalesce bursts of fs events into a single tree refresh
+          window.clearTimeout(treeTimer);
+          treeTimer = window.setTimeout(() => loadTree(), 800);
+        }
       } catch {
         /* ignore */
       }
     };
-    return () => ws.close();
+    return () => {
+      window.clearTimeout(treeTimer);
+      ws.close();
+    };
   }, [authed, loadTree]);
 
   useEffect(() => {

@@ -329,17 +329,11 @@ function buildDecorations(view: EditorView): DecorationSet {
         if (touches(s, e)) continue;
         const alt = m[1];
         const url = m[2].replace(/\s+"[^"]*"$/, '').trim();
-        const isHttp = /^https?:\/\//i.test(url);
-        const hasScheme = /^[a-z][\w+.-]*:\/\//i.test(url);
-        const loadable = isHttp || (!hasScheme && /\.(png|jpe?g|gif|svg|webp|bmp)$/i.test(url));
-        if (loadable) {
-          const src = /^https?:\/\//i.test(url) ? url : attachmentUrl(url);
-          pushReplace(s, e, Decoration.replace({ widget: new ImageWidget(src, alt) }));
-        } else {
-          // unsupported scheme (e.g. trilium-att://) → compact placeholder link
-          const label = alt || url.split('/').pop() || 'image';
-          pushReplace(s, e, Decoration.replace({ widget: new MdLinkWidget('🖼 ' + label, url) }));
-        }
+        // Browser-loadable URLs load directly; anything else (a relative path or
+        // any custom scheme) is resolved by basename via the vault file index.
+        const webLoadable = /^(https?|data|blob|file):/i.test(url);
+        const src = webLoadable ? url : attachmentUrl(url.split('/').pop() || url);
+        pushReplace(s, e, Decoration.replace({ widget: new ImageWidget(src, alt) }));
       }
 
       // Markdown links [text](url) — not preceded by ! (those are images)

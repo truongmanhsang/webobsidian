@@ -7,6 +7,7 @@ import * as vault from '../services/vault.js';
 import { qmd } from '../services/search.js';
 import { buildLinkGraph } from '../services/links.js';
 import { scheduleAutoCommitOnSave } from '../services/git.js';
+import { resolveFile } from '../services/fileindex.js';
 
 export const filesRouter = Router();
 filesRouter.use(requireAuth);
@@ -36,10 +37,16 @@ filesRouter.get(
 filesRouter.get(
   '/content',
   asyncHandler(async (req, res) => {
-    const rel = String(req.query.path ?? '');
+    let rel = String(req.query.path ?? '');
     if (!rel) {
       res.status(400).json({ error: 'path required' });
       return;
+    }
+    // Obsidian-style resolution: if the exact path doesn't exist (e.g. an embed
+    // `![[image.jpg]]` that lives in Attachments/), resolve it by basename.
+    if (!(await vault.exists(rel))) {
+      const resolved = resolveFile(rel);
+      if (resolved) rel = resolved;
     }
     if (vault.isTextFile(rel)) {
       res.json({ path: rel, content: await vault.readFileText(rel), encoding: 'utf8' });

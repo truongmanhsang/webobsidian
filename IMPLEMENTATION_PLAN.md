@@ -139,6 +139,13 @@ Cập nhật lần cuối: 2026-06-03
 - 2026-06-04: Phase 13 — đại tu UI theo phản hồi: bộ icon Lucide flat thay emoji, default Light
   theme, file tree chevron-only, vault footer, status bar góc phải, "Linked mentions". Screenshot
   đối chiếu ảnh Obsidian thật: editor light + properties block + linked mentions khớp.
+- 2026-06-04: Resolve attachment/ảnh kiểu Obsidian: thêm file index toàn vault (basename→path,
+  shortest-path); route /content fallback theo basename khi path không khớp. Image generic theo
+  protocol — URL trình duyệt load được (http(s)/data/blob/file) load thẳng, còn lại (path tương đối
+  hoặc bất kỳ scheme nào) resolve theo basename qua file index. Áp cho cả Live preview lẫn Reading.
+  Verify: ảnh hiển thị inline (naturalWidth>0). Watcher cập nhật index khi add/unlink.
+- 2026-06-04: Khắc phục OOM trên vault lớn (5.9k note): build index không giữ toàn bộ doc, cap body
+  100k, debounce link-graph + loadTree, NODE_OPTIONS=--max-old-space-size=4096 (Dockerfile).
 - 2026-06-04: Live Preview render Markdown chuẩn còn thiếu: link `[text](url)` (ẩn URL, click mở
   external/internal), ảnh `![alt](url)` (http/relative → <img>, scheme lạ như trilium-att:// →
   placeholder "🖼 tên"), URL có dấu cách. Thêm overlap-guard cho replace decoration (chống crash).

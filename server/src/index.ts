@@ -21,6 +21,7 @@ import { pluginsRouter } from './routes/plugins.js';
 import { agentRouter } from './routes/agent.js';
 import { initSearch, qmd } from './services/search.js';
 import { buildLinkGraph } from './services/links.js';
+import { buildFileIndex, indexFile, unindexFile } from './services/fileindex.js';
 import { getVaultRoot, ensureVault } from './services/vault.js';
 import { startAutoSync } from './services/autosync.js';
 
@@ -70,6 +71,7 @@ async function main() {
   console.log('[boot] indexing vault...');
   await initSearch();
   await buildLinkGraph();
+  await buildFileIndex();
   console.log('[boot] index ready');
 
   const server = http.createServer(app);
@@ -109,12 +111,24 @@ async function setupWatcher() {
     persistent: true,
     awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
   });
+  // Rebuilding the link graph reads every markdown file, so coalesce bursts of
+  // filesystem events (e.g. a git pull touching thousands of files) into one
+  // rebuild instead of one per file — otherwise large vaults exhaust memory.
+  let linkTimer: NodeJS.Timeout | null = null;
+  const scheduleLinkRebuild = () => {
+    if (linkTimer) clearTimeout(linkTimer);
+    linkTimer = setTimeout(() => void buildLinkGraph().catch(() => {}), 1500);
+  };
+
   const onChange = async (absPath: string, type: string) => {
     const rel = path.relative(root, absPath).split(path.sep).join('/');
+    // keep the attachment/file index in sync for embed resolution
+    if (type === 'add') indexFile(rel);
+    else if (type === 'unlink') unindexFile(rel);
     if (/\.(md|markdown)$/i.test(rel)) {
       if (type === 'unlink') qmd.remove(rel);
       else await qmd.upsert(rel).catch(() => {});
-      await buildLinkGraph().catch(() => {});
+      scheduleLinkRebuild();
     }
     broadcast({ type: 'fs', event: type, path: rel });
   };

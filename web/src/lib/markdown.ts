@@ -50,6 +50,14 @@ function preprocess(src: string, rawUrl: (p: string) => string): string {
     if (IMG_RE.test(t)) return `<img src="${rawUrl(t)}" alt="${esc(t)}" data-embed="1" />`;
     return `<a class="internal-link embed" data-wikilink="${esc(t)}" href="#">${esc(inner)}</a>`;
   });
+  // Standard markdown images ![alt](url): load web URLs directly, resolve any
+  // relative path or custom scheme by basename via the vault file index.
+  src = src.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, rawTarget: string) => {
+    const url = rawTarget.replace(/\s+"[^"]*"$/, '').trim();
+    const webLoadable = /^(https?|data|blob|file):/i.test(url);
+    const finalSrc = webLoadable ? url : rawUrl(url.split('/').pop() || url);
+    return `<img src="${esc(finalSrc)}" alt="${esc(alt)}" />`;
+  });
   // Links [[target|alias]]
   src = src.replace(/\[\[([^\]]+?)\]\]/g, (_m, inner: string) => {
     const [target, alias] = inner.split('|');

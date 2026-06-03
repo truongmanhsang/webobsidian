@@ -61,9 +61,25 @@ VAULT_PATH=./sample-vault npm start
 | `DATA_DIR` | `./data` | Where `settings.json` + search index live |
 | `ALLOWED_ROOTS` | – | Comma-separated roots the vault picker may browse |
 | `WEBOBSIDIAN_PASSWORD` | – | Seed the master password on first run |
+| `NODE_OPTIONS` | `--max-old-space-size=4096` (Docker) | Node heap size — raise for large vaults |
 
 Everything else (git remote/token, API keys, plugins, theme) is configured in the
 **Settings** UI and stored in `data/settings.json`.
+
+### Large vaults & memory
+
+The search index (QMD) and link graph are kept in memory, so memory use scales with
+the number of markdown files. Node's default heap (~2 GB) is enough for a few thousand
+notes, but a large vault (e.g. ~6k+ notes / multi-GB) can exhaust it and crash with
+`FATAL ERROR: … heap out of memory`. Raise the heap:
+
+```bash
+NODE_OPTIONS=--max-old-space-size=4096 npm start   # 4 GB; use 8192 for very large vaults
+```
+
+The Docker image already sets `NODE_OPTIONS=--max-old-space-size=4096` (override it in
+`docker-compose.yml` if needed). The server also indexes incrementally, caps very large
+note bodies, and debounces re-indexing to keep peak memory bounded.
 
 ## Architecture
 

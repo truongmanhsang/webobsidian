@@ -53,37 +53,41 @@ class QmdEngine {
     });
   }
 
+  // Cap how much of a single note's body we index (some notes are huge); the
+  // tail rarely changes search relevance and very large bodies blow up memory.
+  private static MAX_BODY = 100_000;
+
   private async toDoc(rel: string): Promise<QmdDoc> {
     const raw = await readFileText(rel);
     const note = parseNote(rel, raw);
     const snippet = note.body.replace(/\s+/g, ' ').trim().slice(0, 280);
     this.snippets.set(rel, snippet);
     this.tagSet.set(rel, note.tags);
+    const body = note.body.length > QmdEngine.MAX_BODY ? note.body.slice(0, QmdEngine.MAX_BODY) : note.body;
     return {
       id: rel,
       title: note.title,
       headings: note.headings.join(' '),
       tags: note.tags.join(' '),
       path: rel,
-      body: note.body,
+      body,
     };
   }
 
-  /** Full (re)build from the vault. */
+  /** Full (re)build from the vault. Adds incrementally so we never hold every
+   *  note's full text in a single array (keeps peak memory bounded). */
   async build(): Promise<void> {
     const files = await listMarkdownFiles();
     this.mini = this.newIndex();
     this.snippets.clear();
     this.tagSet.clear();
-    const docs: QmdDoc[] = [];
     for (const rel of files) {
       try {
-        docs.push(await this.toDoc(rel));
+        this.mini.add(await this.toDoc(rel));
       } catch {
         /* skip unreadable */
       }
     }
-    this.mini.addAll(docs);
     this.ready = true;
     await this.persist();
   }

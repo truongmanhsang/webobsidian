@@ -31,7 +31,8 @@ ENV PORT=8787 \
     HOST=0.0.0.0 \
     DATA_DIR=/data \
     VAULT_PATH=/vault \
-    ALLOWED_ROOTS=/vault
+    ALLOWED_ROOTS=/vault \
+    NODE_OPTIONS=--max-old-space-size=4096
 
 VOLUME ["/vault", "/data"]
 EXPOSE 8787
