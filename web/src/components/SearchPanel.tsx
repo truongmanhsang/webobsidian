@@ -30,9 +30,11 @@ export default function SearchPanel() {
   const [showOptions, setShowOptions] = useState(false);
   const [sort, setSort] = useState<SortMode>('relevance');
   const [sortOpen, setSortOpen] = useState(false);
+  const [visible, setVisible] = useState(50); // render incrementally to stay smooth
   const openFile = useStore((s) => s.openFile);
   const searchQuery = useStore((s) => s.searchQuery);
   const timer = useRef<number>();
+  const sentinel = useRef<HTMLDivElement>(null);
 
   // adopt a query pushed from elsewhere (e.g. clicking a tag node in the graph)
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function SearchPanel() {
     }
     timer.current = window.setTimeout(async () => {
       try {
-        const r = await api.search(q, 100);
+        const r = await api.search(q); // no limit — server returns every match
         setHits(r.hits);
       } catch {
         setHits([]);
@@ -55,6 +57,9 @@ export default function SearchPanel() {
     }, 180);
     return () => window.clearTimeout(timer.current);
   }, [q]);
+
+  // Reset the render window whenever the result set or its ordering changes.
+  useEffect(() => setVisible(50), [hits, sort, matchCase]);
 
   // Apply client-side filters (match case) + sort.
   const shown = useMemo(() => {
@@ -84,6 +89,21 @@ export default function SearchPanel() {
     }
     return sorted;
   }, [hits, matchCase, q, sort]);
+
+  // Load the next chunk when the sentinel at the bottom scrolls into view.
+  useEffect(() => {
+    if (visible >= shown.length) return;
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setVisible((v) => Math.min(v + 50, shown.length));
+      },
+      { rootMargin: '300px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible, shown.length]);
 
   return (
     <div className="search-panel">
@@ -168,7 +188,7 @@ export default function SearchPanel() {
       </div>
 
       <div className="search-results">
-        {shown.map((h) => (
+        {shown.slice(0, visible).map((h) => (
           <div key={h.path} className="result" onClick={() => openFile(h.path)}>
             <div className="r-title">{h.title}</div>
             <div className="r-path">{h.path}</div>
@@ -177,6 +197,10 @@ export default function SearchPanel() {
             )}
           </div>
         ))}
+        <div ref={sentinel} />
+        {visible < shown.length && (
+          <div className="search-more">Showing {visible} of {shown.length}…</div>
+        )}
       </div>
     </div>
   );

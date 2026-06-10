@@ -142,7 +142,8 @@ class QmdEngine {
     await this.upsert(to);
   }
 
-  async search(query: string, limit = 30): Promise<SearchHit[]> {
+  /** `limit <= 0` returns every match (caller renders incrementally). */
+  async search(query: string, limit = 0): Promise<SearchHit[]> {
     if (!this.ready) await this.build();
     const s = await getSettings();
     const { filterText, fields } = parseFielded(query);
@@ -157,7 +158,8 @@ class QmdEngine {
     const q = filterText.trim() || query.trim();
     const results = q ? this.mini.search(q, opts) : [];
 
-    return results.slice(0, limit).map((r) => ({
+    const picked = limit > 0 ? results.slice(0, limit) : results;
+    return picked.map((r) => ({
       path: r.id as string,
       title: (r as any).title ?? r.id,
       score: r.score,

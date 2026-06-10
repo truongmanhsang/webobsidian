@@ -12,7 +12,8 @@ searchRouter.get(
   '/search',
   asyncHandler(async (req, res) => {
     const q = String(req.query.q ?? '');
-    const limit = Math.min(Number(req.query.limit ?? 30) || 30, 100);
+    // limit omitted / 0 → return every match; the client renders them incrementally.
+    const limit = Math.max(0, Number(req.query.limit ?? 0) || 0);
     res.json({ query: q, hits: await qmd.search(q, limit) });
   }),
 );

@@ -330,3 +330,10 @@ Cập nhật lần cuối: 2026-06-10
   lọc client theo free-text (bỏ operator tag:/path:). Nâng limit 50→100. Lưu ý: sort theo Modified/
   Created time CHƯA làm — search index không lưu mtime/ctime, cần thêm field server + reindex.
   typecheck + build web sạch. Chưa verify live (browser profile CDP đang bị chiếm).
+- 2026-06-10: Bỏ cap cứng 100 kết quả search (phản hồi "tại sao luôn 100?"). Server: route bỏ
+  Math.min(...,100), `limit<=0`/omitted → trả MỌI match; QmdEngine.search slice chỉ khi limit>0
+  (agent API vẫn truyền limit nên không đổi). Client: api.search bỏ default 100 (gọi không limit),
+  SearchPanel render TĂNG DẦN 50/lần qua IntersectionObserver (sentinel + rootMargin 300px), reset
+  về 50 khi đổi query/sort/match-case, hiện "Showing X of Y…". Đếm giờ đúng tổng thật. Verify API
+  trên vault thật: q=nginx → 166 hit (trước cắt 100), limit=100 vẫn cap 100. Restart server dist mới.
+  typecheck + build web+server sạch.

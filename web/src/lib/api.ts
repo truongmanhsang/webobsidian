@@ -83,8 +83,11 @@ export const api = {
   rawUrl: (path: string) => `/api/files/content?path=${encodeURIComponent(path)}`,
 
   // search & links
-  search: (q: string, limit = 30) =>
-    req<{ hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  // limit omitted → server returns every match (panel renders them incrementally)
+  search: (q: string, limit?: number) =>
+    req<{ hits: SearchHit[] }>(
+      `/api/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`,
+    ),
   tags: () => req<{ tags: { tag: string; count: number }[] }>('/api/tags'),
   properties: () =>
     req<{ properties: { key: string; type: string; count: number }[] }>('/api/properties'),
