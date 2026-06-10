@@ -229,11 +229,23 @@ Cập nhật lần cuối: 2026-06-11
       `Note > Head` (luật reading §7), ảnh size param. Sửa bug sanitize: defaultSchema ràng
       buộc a.className (chỉ cho footnote class) làm mất class internal-link/tag — filter bỏ
       entry mặc định; thêm mark/u vào tagNames
+- [x] M18.14 Reading mode = CHÍNH Live Preview editor set readonly (theo yêu cầu người dùng,
+      thay kiến trúc 2 pipeline): Workspace bỏ <Preview/> cho mode reading, Editor thêm
+      compartment `EditorView.editable(false)` + `EditorState.readOnly` + StateField
+      `livePreviewReadonly` tắt mọi reveal-syntax-theo-caret (touches/lineActive/htmlBlock/
+      mermaid/calloutFold); CSS `.is-reading-mode` ẩn affordance edit (table handles, property
+      add/del, contenteditable) — checkbox và link vẫn bấm được như Obsidian. Hai chế độ giờ
+      đồng nhất theo cấu trúc, không thể lệch. (Pipeline remark của Preview vẫn dùng cho
+      split-pane source + public share.)
 - [ ] M18.11 Tương lai: MathJax thay KaTeX (glyph parity tuyệt đối), heading/block mode
       suggester (`#`/`#^`), `$$` block nhiều dòng, click tag → search, fold heading/indent,
       chevron fold đặt sau title (hiện đặt trước)
 
 ### Nhật ký tiến độ
+- 2026-06-11 (đợt 5): đổi kiến trúc Reading mode theo yêu cầu — Reading = Live Preview editor
+  readonly (một renderer duy nhất), kèm chevron fold callout + syntax highlight code (CM grammar)
+  cho pipeline Preview còn lại. Verify: reading là .cm-editor contenteditable=false, callout/
+  checkbox/fold/code/math/footnote/HTML render y hệt Live.
 - 2026-06-11 (đợt 4): Reading mode parity với Live — dùng chung callout constants, KaTeX +
   mermaid + highlight + tag pill + comment strip + breaks:true + callout fold trong Reading.
   Debug sanitize bằng node repro: a.className bị defaultSchema giới hạn giá trị → filter entry.

@@ -497,6 +497,19 @@ button { font-family: inherit; }
   color: rgb(var(--callout-color, var(--callout-default))); }
 .cm-callout-icon svg { width: 16px; height: 16px; }
 
+/* ---- Reading mode = Live Preview readonly: hide editing affordances ---- */
+.is-reading-mode .cm-content { caret-color: transparent; }
+.is-reading-mode .cm-cell-edit,
+.is-reading-mode .cm-properties .prop-key,
+.is-reading-mode .cm-properties .prop-val-input,
+.is-reading-mode .cm-properties .prop-pill-text,
+.is-reading-mode .cm-properties .prop-input,
+.is-reading-mode .cm-properties .prop-checkbox { pointer-events: none; }
+.is-reading-mode .cm-table-addcol, .is-reading-mode .cm-table-addrow,
+.is-reading-mode .cm-col-handle, .is-reading-mode .cm-row-handle,
+.is-reading-mode .prop-del, .is-reading-mode .prop-pill-x,
+.is-reading-mode .prop-pill-add, .is-reading-mode .cm-props-add { display: none !important; }
+
 /* ---- Suggestion popup (.suggestion-container, §20) ---- */
 .suggestion-container { position: fixed; z-index: 9999; background: var(--background-primary);
   border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m);
@@ -526,7 +539,21 @@ button { font-family: inherit; }
 .markdown-preview mark { background: var(--text-highlight-bg); color: inherit; }
 .markdown-preview p { margin: .6em 0; }
 .markdown-preview code { font-family: var(--font-mono); background: var(--bg-secondary); padding: 1px 5px; border-radius: var(--radius-s); font-size: .88em; }
-.markdown-preview pre { background: var(--background-primary-alt); padding: 12px 16px; border-radius: var(--radius-s); overflow-x: auto; }
+.markdown-preview pre { background: var(--background-primary-alt); padding: 12px 16px; border-radius: var(--radius-s); overflow-x: auto; position: relative; }
+/* Language flair top-right, same as Live Preview's code blocks */
+.markdown-preview pre[data-lang]::after { content: attr(data-lang); position: absolute; top: 6px; right: 10px;
+  color: var(--text-faint); font-size: var(--font-ui-smaller); font-family: var(--font-ui); text-transform: capitalize; }
+/* Token palette (classHighlighter classes) — mirrors lib/highlight.ts (§19) */
+.markdown-preview .tok-comment, .markdown-preview .tok-meta { color: var(--text-faint); }
+.markdown-preview .tok-keyword { color: var(--color-pink); }
+.markdown-preview .tok-string, .markdown-preview .tok-string2, .markdown-preview .tok-literal { color: var(--color-green); }
+.markdown-preview .tok-operator, .markdown-preview .tok-tagName, .markdown-preview .tok-angleBracket { color: var(--color-red); }
+.markdown-preview .tok-propertyName, .markdown-preview .tok-attributeName, .markdown-preview .tok-definition { color: var(--color-cyan); }
+.markdown-preview .tok-typeName, .markdown-preview .tok-className, .markdown-preview .tok-namespace { color: var(--color-cyan); }
+.markdown-preview .tok-number, .markdown-preview .tok-bool, .markdown-preview .tok-atom, .markdown-preview .tok-unit, .markdown-preview .tok-color { color: var(--color-purple); }
+.markdown-preview .tok-function, .markdown-preview .tok-macroName { color: var(--color-yellow); }
+.markdown-preview .tok-self, .markdown-preview .tok-annotation, .markdown-preview .tok-changed { color: var(--color-orange); }
+.markdown-preview .tok-invalid { color: var(--color-red); }
 .markdown-preview pre code { background: transparent; padding: 0; }
 .markdown-preview blockquote { border-left: 3px solid var(--interactive-accent); margin: .8em 0; padding: 2px 24px; color: var(--text-normal); }
 .markdown-preview img { max-width: 100%; border-radius: var(--radius); }
@@ -601,6 +628,9 @@ button { font-family: inherit; }
 .callout-content > :last-child { margin-bottom: 0; }
 .callout.is-collapsed .callout-content { display: none; }
 .callout[data-callout-fold='-'] > .callout-title, .callout[data-callout-fold='+'] > .callout-title { cursor: pointer; }
+.callout-fold { display: inline-flex; margin-left: 4px; color: rgb(var(--callout-color)); transition: transform var(--transition); }
+.callout-fold svg { width: 16px; height: 16px; }
+.callout.is-collapsed .callout-fold { transform: rotate(-90deg); }
 /* type → color slot mapping (§21) */
 .callout[data-callout='abstract'], .callout[data-callout='summary'], .callout[data-callout='tldr'] { --callout-color: var(--callout-summary); }
 .callout[data-callout='info'] { --callout-color: var(--callout-info); }

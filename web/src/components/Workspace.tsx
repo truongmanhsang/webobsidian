@@ -21,7 +21,9 @@ function EditorPane() {
       </div>
     );
   }
-  if (activePath && isMd && viewMode === 'reading') return <Preview />;
+  // Reading mode = the same Live Preview editor in read-only (identical render).
+  void isMd;
+  void viewMode;
   return <Editor />;
 }
 

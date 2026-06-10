@@ -1,8 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
+import { highlightCode, classHighlighter } from '@lezer/highlight';
+import { LanguageDescription } from '@codemirror/language';
+import { languages } from '@codemirror/language-data';
 import { useStore } from '../lib/store';
 import { renderMarkdown } from '../lib/markdown';
 import { calloutIconSvg } from '../lib/callouts';
 import { api } from '../lib/api';
+
+/** Syntax-highlight a `<code class="language-x">` block with the SAME CodeMirror
+ *  grammars Live Preview uses (token classes styled by the Obsidian palette). */
+async function highlightCodeEl(codeEl: HTMLElement): Promise<void> {
+  const cls = [...codeEl.classList].find((c) => c.startsWith('language-'));
+  if (!cls) return;
+  const langName = cls.slice('language-'.length);
+  const desc = LanguageDescription.matchLanguageName(languages, langName, true);
+  if (!desc) return;
+  codeEl.closest('pre')?.setAttribute('data-lang', desc.name);
+  const support = await desc.load();
+  const code = codeEl.textContent ?? '';
+  const tree = support.language.parser.parse(code);
+  const out: Node[] = [];
+  highlightCode(
+    code,
+    tree,
+    classHighlighter,
+    (text, classes) => {
+      if (classes) {
+        const span = document.createElement('span');
+        span.className = classes;
+        span.textContent = text;
+        out.push(span);
+      } else {
+        out.push(document.createTextNode(text));
+      }
+    },
+    () => out.push(document.createTextNode('\n')),
+  );
+  codeEl.textContent = '';
+  codeEl.append(...out);
+}
 
 let katexP: Promise<typeof import('katex')['default']> | null = null;
 const loadKatex = () =>
@@ -59,6 +95,17 @@ export default function Preview({ source }: { source?: string }) {
     for (const el of root.querySelectorAll<HTMLElement>('.callout-icon[data-callout-icon]')) {
       el.innerHTML = calloutIconSvg(el.dataset.calloutIcon ?? 'default');
     }
+    // Fold chevron on collapsible callouts (rotates via .is-collapsed CSS).
+    for (const title of root.querySelectorAll<HTMLElement>(
+      '.callout[data-callout-fold="-"] > .callout-title, .callout[data-callout-fold="+"] > .callout-title',
+    )) {
+      if (title.querySelector('.callout-fold')) continue;
+      const ch = document.createElement('span');
+      ch.className = 'callout-fold';
+      ch.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+      title.appendChild(ch);
+    }
     if (root.querySelector('[data-tex]')) {
       void loadKatex().then((katex) => {
         if (cancelled) return;
@@ -73,6 +120,10 @@ export default function Preview({ source }: { source?: string }) {
           }
         }
       });
+    }
+    // Code blocks: same grammars + palette as Live Preview.
+    for (const codeEl of root.querySelectorAll<HTMLElement>('pre > code[class*="language-"]:not(.language-mermaid)')) {
+      void highlightCodeEl(codeEl).catch(() => {});
     }
     const mmd = root.querySelectorAll<HTMLElement>('pre > code.language-mermaid');
     if (mmd.length) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { EditorState, Prec } from '@codemirror/state';
+import { Compartment, EditorState, Prec } from '@codemirror/state';
 import { EditorView, keymap, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -23,6 +23,8 @@ import {
   noteTitleField,
   inlineTitleField,
   editorClickFix,
+  livePreviewReadonly,
+  setLivePreviewReadonly,
   setLivePreviewEnabled,
   setLivePreviewLinkHandler,
   setLivePreviewMenuHandler,
@@ -39,9 +41,14 @@ import { api } from '../lib/api';
 const titleOf = (path: string | null) =>
   path ? (path.split('/').pop() ?? path).replace(/\.(md|markdown)$/i, '') : '';
 
+// Reading mode = the same Live Preview editor, made read-only via this compartment.
+const readonlyExt = (reading: boolean) =>
+  reading ? [EditorView.editable.of(false), EditorState.readOnly.of(true)] : [];
+
 export default function Editor() {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
+  const readonlyComp = useRef(new Compartment()).current;
   const applyingExternal = useRef(false);
   const activePath = useStore((s) => s.activePath);
   const content = useStore((s) => s.content);
@@ -259,7 +266,10 @@ export default function Editor() {
         // structure styling is owned by the Live Preview decorations.
         syntaxHighlighting(obsidianHighlightStyle),
         EditorView.lineWrapping,
-        livePreviewState.init(() => isMd && viewMode === 'live'),
+        // Live Preview drives BOTH live and reading; reading is just read-only.
+        livePreviewState.init(() => isMd && viewMode !== 'source'),
+        livePreviewReadonly.init(() => viewMode === 'reading'),
+        readonlyComp.of(readonlyExt(viewMode === 'reading')),
         noteTitleField.init(() => titleOf(activePath)),
         inlineTitleField,
         frontmatterField,
@@ -303,11 +313,16 @@ export default function Editor() {
     applyingExternal.current = false;
   }, [content]);
 
-  // Toggle live preview when the view mode changes (without recreating editor).
+  // Toggle live preview / readonly when the view mode changes (no recreate).
   useEffect(() => {
     const isMd = activePath ? /\.(md|markdown)$/i.test(activePath) : false;
     view.current?.dispatch({
-      effects: [setLivePreviewEnabled.of(isMd && viewMode === 'live'), setNoteTitle.of(titleOf(activePath))],
+      effects: [
+        setLivePreviewEnabled.of(isMd && viewMode !== 'source'),
+        setLivePreviewReadonly.of(viewMode === 'reading'),
+        readonlyComp.reconfigure(readonlyExt(viewMode === 'reading')),
+        setNoteTitle.of(titleOf(activePath)),
+      ],
     });
   }, [viewMode, activePath]);
 
@@ -325,7 +340,8 @@ export default function Editor() {
     'cm-s-obsidian',
     'mod-cm6',
     'is-readable-line-width',
-    viewMode === 'live' ? 'is-live-preview live-preview' : '',
+    viewMode !== 'source' ? 'is-live-preview live-preview' : '',
+    viewMode === 'reading' ? 'is-reading-mode' : '',
   ].join(' ');
   return <div className={cls} ref={host} onContextMenu={onContextMenu} />;
 }

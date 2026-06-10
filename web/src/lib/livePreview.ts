@@ -416,13 +416,15 @@ function buildMermaid(state: EditorState): DecorationSet {
     if (end < 0) continue;
     const from = line.from;
     const to = doc.line(end).to;
+    const ro = state.field(livePreviewReadonly, false) ?? false;
     let touched = false;
-    for (const r of state.selection.ranges) {
-      if (r.from <= to && r.to >= from) {
-        touched = true;
-        break;
+    if (!ro)
+      for (const r of state.selection.ranges) {
+        if (r.from <= to && r.to >= from) {
+          touched = true;
+          break;
+        }
       }
-    }
     if (!touched) {
       const code = end > n + 1 ? doc.sliceString(doc.line(n + 1).from, doc.line(end - 1).to) : '';
       ranges.push(Decoration.replace({ widget: new MermaidWidget(code), block: true }).range(from, to));
@@ -489,14 +491,16 @@ function buildCalloutFolds(state: EditorState): DecorationSet {
         while (last < doc.lines && QUOTE_LINE_RE.test(doc.line(last + 1).text)) last++;
         if (last > n) {
           const to = doc.line(last).to;
-          // reveal while the caret is inside the callout
+          // reveal while the caret is inside the callout (never in readonly)
+          const ro = state.field(livePreviewReadonly, false) ?? false;
           let touched = false;
-          for (const r of state.selection.ranges) {
-            if (r.from <= to && r.to >= line.from) {
-              touched = true;
-              break;
+          if (!ro)
+            for (const r of state.selection.ranges) {
+              if (r.from <= to && r.to >= line.from) {
+                touched = true;
+                break;
+              }
             }
-          }
           if (!touched) ranges.push(Decoration.replace({ block: true }).range(line.to, to));
           n = last;
           prevIsQuote = false;
@@ -1609,12 +1613,16 @@ function buildDecorations(view: EditorView): DecorationSet {
     all.push(deco.range(from, to));
   };
 
-  // selection overlaps [from,to] (inclusive) → reveal raw syntax for that span
+  // selection overlaps [from,to] (inclusive) → reveal raw syntax for that span.
+  // In reading mode (readonly) nothing is ever revealed — same render, no edit.
+  const readonly = view.state.field(livePreviewReadonly, false) ?? false;
   const touches = (from: number, to: number) => {
+    if (readonly) return false;
     for (const r of sel.ranges) if (r.from <= to && r.to >= from) return true;
     return false;
   };
   const lineActive = (pos: number) => {
+    if (readonly) return false;
     const line = doc.lineAt(pos);
     return touches(line.from, line.to);
   };
@@ -2139,6 +2147,20 @@ export const livePreviewState = StateField.define<boolean>({
   },
 });
 
+/**
+ * Reading mode = the SAME Live Preview pipeline, read-only: when set, the
+ * caret/selection never reveals raw syntax, so everything stays rendered.
+ */
+export const setLivePreviewReadonly = StateEffect.define<boolean>();
+
+export const livePreviewReadonly = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    for (const e of tr.effects) if (e.is(setLivePreviewReadonly)) return e.value;
+    return value;
+  },
+});
+
 /* ---------------- inline title (note filename, Obsidian-style) ---------------- */
 
 class TitleWidget extends WidgetType {
@@ -2233,15 +2255,17 @@ function buildHtmlBlocks(state: EditorState): DecorationSet {
   if (!state.field(livePreviewState, false)) return Decoration.none;
   const blocks = scanHtmlBlocks(state);
   if (!blocks.length) return Decoration.none;
+  const ro = state.field(livePreviewReadonly, false) ?? false;
   const ranges: Range<Decoration>[] = [];
   for (const b of blocks) {
     let touched = false;
-    for (const r of state.selection.ranges) {
-      if (r.from <= b.to && r.to >= b.from) {
-        touched = true;
-        break;
+    if (!ro)
+      for (const r of state.selection.ranges) {
+        if (r.from <= b.to && r.to >= b.from) {
+          touched = true;
+          break;
+        }
       }
-    }
     if (touched) continue;
     const html = state.doc.sliceString(b.from, b.to);
     ranges.push(Decoration.replace({ widget: new HtmlBlockWidget(html), block: true }).range(b.from, b.to));
