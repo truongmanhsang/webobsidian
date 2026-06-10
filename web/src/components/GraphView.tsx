@@ -6,7 +6,8 @@ import {
   forceSimulation,
   forceManyBody,
   forceLink,
-  forceCenter,
+  forceX,
+  forceY,
   forceCollide,
   type Simulation,
 } from 'd3-force';
@@ -20,6 +21,7 @@ interface GNode {
   kind: NodeKind;
   tags: string[];
   deg: number;
+  fade?: number; // Obsidian's fadeAlpha: dims to 0.2 when another node is hovered
   x?: number;
   y?: number;
   vx?: number;
@@ -60,18 +62,38 @@ interface PixiCtx {
 
 const TEXR = 32; // radius of the shared circle texture (sprites are scaled from this)
 
-// --- force mapping: normalized 0..1 sliders → d3-force params -------------
-// Stronger repulsion + longer links + gentler centering so the graph spreads
-// into readable clusters instead of collapsing into a tangled hairball.
-const charge = (s: GraphSettings) => -(20 + s.repelForce * 200); // default ≈ -120
-const linkDist = (s: GraphSettings) => 25 + s.linkDistance * 150; // default ≈ 100
-const linkStr = (s: GraphSettings) => 0.1 + s.linkForce * 0.8; // default ≈ 0.5
-const centerStr = (s: GraphSettings) => s.centerForce * 0.08; // default ≈ 0.04
-const chargeStrength = (s: GraphSettings) => (n: GNode) => charge(s) * (1 + Math.sqrt(n.deg) * 0.3);
-// Gentle sqrt growth, CAPPED so a high-degree tag hub stays only ~3-4× a note
-// (Obsidian-like) instead of ballooning. Notes have a solid visible base size.
+// --- force mapping: EXACT port of Obsidian's graph physics ------------------
+// Reverse-engineered from the installed app (obsidian.asar → sim.js worker +
+// app.js panel). Obsidian runs stock d3-force with: forceX/forceY gravity,
+// forceManyBody(-slider³, distanceMin 30, theta .9, NO distanceMax), forceLink
+// (distance = slider, strength = slider × d3's adaptive 1/min(degree)), and
+// forceCollide(radius 60 const, strength .5). Same slider scales & defaults.
+// Center slider → strength via Obsidian's MJ(e, .01) easing: 0.52 → 0.1.
+const easeStrength = (e: number, t = 0.01) => (Math.pow(t, 1 - e) - t) / (1 - t);
+const charge = (s: GraphSettings) => -Math.pow(s.repelForce, 3); // default 10 → -1000
+const linkDist = (s: GraphSettings) => s.linkDistance; // default 250 (world units)
+const centerStr = (s: GraphSettings) => easeStrength(s.centerForce); // default 0.52 → 0.1
+const chargeStrength = (s: GraphSettings) => (_n: GNode) => charge(s);
+const linkStrength = (s: GraphSettings) => (l: GLink) =>
+  s.linkForce / Math.min((l.source as GNode).deg || 1, (l.target as GNode).deg || 1);
+// Obsidian's node sizing: getSize() = nodeSizeMult × clamp(3·√(deg+1), 8, 30).
 const nodeRadius = (n: GNode, s: GraphSettings) =>
-  (3 + Math.min(Math.sqrt(n.deg), 11)) * (0.45 + s.nodeSize);
+  s.nodeSize * Math.max(8, Math.min(3 * Math.sqrt(n.deg + 1), 30));
+// Obsidian's renderer works in DEVICE pixels: scale 1 = 1 world unit per device
+// px, and nodeScale = √(1/scale) so the on-screen radius is getSize()·√scale
+// DEVICE px. Our camera k is in CSS px, so the device scale is e = k·dpr and
+// anything following the √zoom law maps to CSS px via √(k/dpr).
+const dprNow = () => window.devicePixelRatio || 1;
+const devScale = (k: number) => Math.max(1e-6, k) * dprNow();
+const renderScale = (k: number) => Math.sqrt(Math.max(1e-6, k) / dprNow()); // CSS px per world unit under the √zoom law
+const screenRadius = (n: GNode, s: GraphSettings, k: number) =>
+  nodeRadius(n, s) * renderScale(k);
+const spriteScale = (n: GNode, s: GraphSettings, k: number) =>
+  screenRadius(n, s, k) / (TEXR * Math.max(1e-6, k)); // world-units scale for the sprite
+// Obsidian's zoom clamp (device scale) and node dim level for hover fade.
+const SCALE_MIN = 1 / 128;
+const SCALE_MAX = 8;
+const FADE_DIM = 0.2;
 
 /**
  * Graph view — WebGL-rendered via PixiJS (like Obsidian's PixiJS graph), with the
@@ -96,10 +118,17 @@ export default function GraphView() {
   const pixi = useRef<PixiCtx | null>(null);
   const mod = useRef<typeof import('pixi.js') | null>(null);
   const cam = useRef({ x: 0, y: 0, k: 1 });
+  // Obsidian's smooth zoom: wheel sets targetScale (device px), the render loop
+  // lerps scale 15% toward it per frame, anchored at the cursor when zooming in
+  // and at the viewport center when zooming out.
+  const zoomTarget = useRef(1);
+  const zoomAnchor = useRef<{ x: number; y: number } | null>(null);
+  const adjRef = useRef<Map<GNode, Set<GNode>>>(new Map());
   const hover = useRef<GNode | null>(null);
   const drag = useRef<{ px: number; py: number; moved: number } | null>(null);
   const rafRef = useRef<number>();
   const fullDirty = useRef(false);
+  const edgesDirty = useRef(false);
   const lastEdgeK = useRef(-1);
   const userMoved = useRef(false);
   const sref = useRef(settings);
@@ -107,7 +136,7 @@ export default function GraphView() {
 
   const [rawVersion, setRawVersion] = useState(0);
   const [sceneVersion, setSceneVersion] = useState(0);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false); // Obsidian default: collapsed, cog only
   const [stats, setStats] = useState({ total: 0, shown: 0, orphans: 0 });
   const [buildError, setBuildError] = useState<string | null>(null);
 
@@ -132,7 +161,7 @@ export default function GraphView() {
       textStrong: toInt('--text-normal', 0x222222),
       attach: 0xe0a008,
       unresolved: toInt('--text-faint', 0xaaaaaa),
-      tag: 0x13a8cd,
+      tag: 0x3aa757, // Obsidian-like green for tag nodes
       bg: toInt('--bg-primary', 0xffffff),
     };
   };
@@ -156,7 +185,7 @@ export default function GraphView() {
     if (n.kind === 'attachment') return cols.attach;
     if (n.kind === 'unresolved') return cols.unresolved;
     if (n.kind === 'tag') return cols.tag;
-    return cols.accent;
+    return cols.text; // Obsidian draws plain notes gray, not accent-colored
   };
 
   // ---- rendering (camera transform + on-demand repaint) -------------------
@@ -169,22 +198,86 @@ export default function GraphView() {
     });
   };
 
+  // One step of Obsidian's updateZoom(): lerp the scale 15% toward targetScale
+  // around the zoom anchor. Returns true while the animation is still running.
+  const stepZoom = (): boolean => {
+    const v = cam.current;
+    const dpr = dprNow();
+    let e = v.k * dpr;
+    const t = (zoomTarget.current = Math.min(SCALE_MAX, Math.max(SCALE_MIN, zoomTarget.current)));
+    if ((e > t ? e / t : t / e) - 1 < 0.01) return false;
+    const wrap = wrapRef.current;
+    const a = zoomAnchor.current ?? {
+      x: (wrap?.clientWidth || 900) / 2,
+      y: (wrap?.clientHeight || 600) / 2,
+    };
+    const wx = (a.x - v.x) / v.k; // world point pinned under the anchor
+    const wy = (a.y - v.y) / v.k;
+    e = e * 0.85 + t * 0.15;
+    v.k = e / dpr;
+    v.x = a.x - wx * v.k;
+    v.y = a.y - wy * v.k;
+    return true;
+  };
+
+  // Obsidian's hover fade: nodes not linked to the highlighted node ease toward
+  // alpha 0.2 (mQ lerp, 90% retained per frame). Returns true while animating.
+  const stepFade = (): boolean => {
+    const h = hover.current;
+    const nb = h ? adjRef.current.get(h) : null;
+    let moving = false;
+    for (const n of nodesRef.current) {
+      const target = !h || n === h || nb?.has(n) ? 1 : FADE_DIM;
+      const f = n.fade ?? 1;
+      if (Math.abs(f - target) < 0.01) {
+        if (f !== target) n.fade = target;
+        continue;
+      }
+      n.fade = f * 0.9 + target * 0.1;
+      moving = true;
+    }
+    return moving;
+  };
+
+  const applyNodeAlphas = () => {
+    const p = pixi.current;
+    if (!p) return;
+    for (const [n, sp] of p.sprites) {
+      sp.alpha = (n.kind === 'unresolved' ? 0.55 : 1) * (n.fade ?? 1);
+    }
+  };
+
   const doRender = () => {
     const p = pixi.current;
     if (!p) return;
+    const zooming = stepZoom();
+    const fading = stepFade();
     const { x, y, k } = cam.current;
     p.world.position.set(x, y);
     p.world.scale.set(k);
     if (fullDirty.current) updatePositions();
-    // edges are drawn in world space but their width is set to 1/k so they keep a
-    // constant on-screen thickness — redraw on layout change or when zoom changes.
-    if (fullDirty.current || k !== lastEdgeK.current) {
+    // edges are drawn in world space at a constant DEVICE-pixel thickness; node
+    // sprites follow Obsidian's √zoom law — both need a refresh on layout
+    // change, zoom change, or when the hover highlight moves.
+    if (fullDirty.current || k !== lastEdgeK.current || edgesDirty.current) {
       drawEdges();
+      applyNodeScales();
       lastEdgeK.current = k;
+      edgesDirty.current = false;
     }
+    if (fading) applyNodeAlphas();
     fullDirty.current = false;
     updateLabels();
     p.app.render();
+    // debug/testing hook: expose the live camera (used by automated UI checks)
+    (window as unknown as { __graphCam?: object }).__graphCam = {
+      k,
+      x,
+      y,
+      target: zoomTarget.current,
+      dev: devScale(k),
+    };
+    if (zooming || fading) scheduleRender(false);
   };
 
   const updatePositions = () => {
@@ -196,39 +289,77 @@ export default function GraphView() {
     }
   };
 
+  const applyNodeScales = () => {
+    const p = pixi.current;
+    if (!p) return;
+    const s = sref.current;
+    const k = cam.current.k || 1;
+    for (const [n, sp] of p.sprites) {
+      sp.scale.set(spriteScale(n, s, k));
+      sp.alpha = (n.kind === 'unresolved' ? 0.55 : 1) * (n.fade ?? 1);
+    }
+  };
+
   const drawEdges = () => {
     const p = pixi.current;
     if (!p) return;
     const s = sref.current;
     const k = cam.current.k || 1;
+    const h = hover.current;
     const g = p.edges;
+    // Obsidian draws edges at lineSizeMult / scale in world space — i.e. a
+    // constant lineSizeMult DEVICE pixels on screen — in a faint theme gray.
+    // When a node is hovered, its edges switch to the highlight color and all
+    // others dim like the unrelated nodes do.
+    const width = s.linkThickness / devScale(k);
+    const baseAlpha = Math.min(0.85, 0.18 + s.linkThickness * 0.22);
     g.clear();
+    let hasHl = false;
     for (const l of linksRef.current) {
       const a = l.source as GNode;
       const b = l.target as GNode;
+      if (h && (a === h || b === h)) {
+        hasHl = true;
+        continue;
+      }
       g.moveTo(a.x ?? 0, a.y ?? 0);
       g.lineTo(b.x ?? 0, b.y ?? 0);
     }
-    // width / k → constant on-screen thickness after the world is scaled by k
-    g.stroke({ width: (0.8 + s.linkThickness * 1.2) / k, color: p.cols.edge, alpha: 0.5 + s.linkThickness * 0.45 });
+    g.stroke({ width, color: p.cols.edge, alpha: baseAlpha * (h ? FADE_DIM : 1) });
+    if (hasHl) {
+      for (const l of linksRef.current) {
+        const a = l.source as GNode;
+        const b = l.target as GNode;
+        if (!(a === h || b === h)) continue;
+        g.moveTo(a.x ?? 0, a.y ?? 0);
+        g.lineTo(b.x ?? 0, b.y ?? 0);
+      }
+      g.stroke({ width, color: p.cols.accentHover, alpha: 0.9 });
+    }
 
     const ag = p.arrows;
     ag.clear();
     if (s.arrows) {
-      const size = (4 + s.linkThickness * 3) / k;
-      for (const l of linksRef.current) {
-        const a = l.source as GNode;
-        const b = l.target as GNode;
-        const ang = Math.atan2((b.y ?? 0) - (a.y ?? 0), (b.x ?? 0) - (a.x ?? 0));
-        const r = nodeRadius(b, s) + 1;
-        const tx = (b.x ?? 0) - Math.cos(ang) * r;
-        const ty = (b.y ?? 0) - Math.sin(ang) * r;
-        ag.moveTo(tx, ty);
-        ag.lineTo(tx - Math.cos(ang - 0.4) * size, ty - Math.sin(ang - 0.4) * size);
-        ag.lineTo(tx - Math.cos(ang + 0.4) * size, ty - Math.sin(ang + 0.4) * size);
-        ag.closePath();
+      // Obsidian: arrow sprite scale = 2√(lineSizeMult)/scale (world units) and
+      // its alpha fades out with clamp(2·(scale − 0.3), 0, 1) as you zoom away.
+      const e = devScale(k);
+      const arrowAlpha = 0.6 * Math.max(0, Math.min(1, 2 * (e - 0.3)));
+      if (arrowAlpha > 0.001) {
+        const size = (8 * Math.sqrt(s.linkThickness)) / e;
+        for (const l of linksRef.current) {
+          const a = l.source as GNode;
+          const b = l.target as GNode;
+          const ang = Math.atan2((b.y ?? 0) - (a.y ?? 0), (b.x ?? 0) - (a.x ?? 0));
+          const r = screenRadius(b, s, k) / k + 1; // world radius of the drawn node
+          const tx = (b.x ?? 0) - Math.cos(ang) * r;
+          const ty = (b.y ?? 0) - Math.sin(ang) * r;
+          ag.moveTo(tx, ty);
+          ag.lineTo(tx - Math.cos(ang - 0.4) * size, ty - Math.sin(ang - 0.4) * size);
+          ag.lineTo(tx - Math.cos(ang + 0.4) * size, ty - Math.sin(ang + 0.4) * size);
+          ag.closePath();
+        }
+        ag.fill({ color: p.cols.edge, alpha: arrowAlpha });
       }
-      ag.fill({ color: p.cols.edge, alpha: 0.6 });
     }
   };
 
@@ -236,15 +367,17 @@ export default function GraphView() {
     const p = pixi.current!;
     let t = p.labels[i];
     if (!t) {
+      // Obsidian's node label style: fontSize 14 (+ getSize()/4 applied via the
+      // per-node scale), default weight, no outline, resolution 2.
       t = new mod.current!.Text({
         text: '',
         style: {
-          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-          fontSize: 13,
-          fontWeight: '600',
+          fontFamily:
+            'ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Inter", sans-serif',
+          fontSize: 14,
           fill: p.cols.textStrong,
-          stroke: { color: p.cols.bg, width: 4, join: 'round' },
         },
+        resolution: 2,
       });
       t.anchor.set(0.5, 0);
       p.labelLayer.addChild(t);
@@ -262,59 +395,49 @@ export default function GraphView() {
     const W = wrap.clientWidth;
     const H = wrap.clientHeight;
     const h = hover.current;
-    // Labels begin appearing once a node's on-screen radius passes rMin, then
-    // FADE GRADUALLY from dim → fully opaque over a zoom range (like Obsidian):
-    // big hubs clear first, smaller notes ramp up as you keep zooming in.
-    const rMin = 1.0 - s.textFade * 0.9; // default(0.5) ≈ 0.55px — where the fade starts
-    const fade = 4.5; // px of on-screen radius over which a label ramps to full
+    const e = devScale(k);
+    const rs = renderScale(k);
+    const dpr = dprNow();
+    // Obsidian's global text fade (device scale!): textAlpha =
+    // clamp(log2(scale) + 1 − fade, 0, 1) — all labels share one zoom-driven
+    // alpha, further multiplied by each node's hover-fade; hover is always 1.
+    const textAlpha = Math.max(0, Math.min(1, Math.log2(e) + 1 - s.textFade));
 
-    const cand: { n: GNode; sx: number; sy: number; r: number; a: number }[] = [];
-    for (const n of nodesRef.current) {
-      const sx = (n.x ?? 0) * k + cx;
-      const sy = (n.y ?? 0) * k + cy;
-      if (sx < -60 || sx > W + 60 || sy < -40 || sy > H + 40) continue;
-      const r = nodeRadius(n, s) * k;
-      const a = n === h ? 1 : Math.min(1, (r - rMin) / fade);
-      if (a <= 0.04) continue;
-      cand.push({ n, sx, sy, r, a });
-    }
-    // Consider the most prominent candidates first (hover, then degree).
-    cand.sort((u, v) => (v.n === h ? 1 : 0) - (u.n === h ? 1 : 0) || v.n.deg - u.n.deg);
-    const POOL = Math.min(cand.length, 800);
-
-    // Greedy placement: skip any label whose box overlaps one already placed, so
-    // labels never pile into an unreadable mass (Obsidian-style decluttering).
-    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
-    const MAX = 220;
-    let li = 0;
-    for (let ci = 0; ci < POOL && li < MAX; ci++) {
-      const { n, sx, sy, r, a } = cand[ci];
-      const label = n.label.length > 28 ? n.label.slice(0, 26) + '…' : n.label;
-      const w = Math.max(16, label.length * 7.2);
-      const x0 = sx - w / 2;
-      const x1 = sx + w / 2;
-      const y0 = sy + r + 3;
-      const y1 = y0 + 15;
-      let clash = false;
-      for (const b of placed) {
-        if (x0 < b.x1 && x1 > b.x0 && y0 < b.y1 && y1 > b.y0) {
-          clash = true;
-          break;
-        }
+    const cand: { n: GNode; sx: number; sy: number; a: number }[] = [];
+    if (textAlpha > 0.001 || h) {
+      for (const n of nodesRef.current) {
+        const a = n === h ? 1 : textAlpha * (n.fade ?? 1);
+        if (a <= 0.02) continue;
+        const sx = (n.x ?? 0) * k + cx;
+        const sy = (n.y ?? 0) * k + cy;
+        if (sx < -100 || sx > W + 100 || sy < -60 || sy > H + 60) continue;
+        cand.push({ n, sx, sy, a });
       }
-      if (clash && n !== h) continue;
-      placed.push({ x0, y0, x1, y1 });
+    }
+    // Label pool is bounded; prefer the hovered node, then high-degree nodes.
+    cand.sort((u, v) => (v.n === h ? 1 : 0) - (u.n === h ? 1 : 0) || v.n.deg - u.n.deg);
+    const MAX = Math.min(cand.length, 400);
 
+    let li = 0;
+    for (let ci = 0; ci < MAX; ci++) {
+      const { n, sx, sy, a } = cand[ci];
+      const label = n.label.length > 44 ? n.label.slice(0, 42) + '…' : n.label;
       const t = ensureLabel(li++);
       if (t.text !== label) t.text = label;
       const isH = n === h;
       if ((t as unknown as { _hv?: boolean })._hv !== isH) {
         (t as unknown as { _hv?: boolean })._hv = isH;
         t.style.fill = isH ? p.cols.accentHover : p.cols.textStrong;
-        t.style.fontSize = isH ? 14 : 13;
       }
+      // Obsidian: labels live in world space with scale = nodeScale and font
+      // size 14 + getSize()/4, i.e. they shrink with √zoom exactly like nodes;
+      // a hovered label never shrinks below 1 device pixel per font unit.
+      const r = nodeRadius(n, s);
+      const fontMul = (14 + r / 4) / 14;
+      const sc = (isH && e < 1 ? 1 / dpr : rs) * fontMul;
+      t.scale.set(sc);
       t.x = sx;
-      t.y = y0;
+      t.y = sy + (r + 5) * rs + (isH ? 15 / dpr : 0);
       t.alpha = a;
       t.visible = true;
     }
@@ -346,14 +469,14 @@ export default function GraphView() {
         const sp = new Sprite(p.tex);
         sp.anchor.set(0.5);
         sp.tint = colorOf(n, p.cols);
-        sp.scale.set(nodeRadius(n, s) / TEXR);
+        sp.scale.set(spriteScale(n, s, cam.current.k || 1));
         sp.alpha = n.kind === 'unresolved' ? 0.55 : 1;
         sp.x = n.x ?? 0;
         sp.y = n.y ?? 0;
         p.nodeLayer.addChild(sp);
         p.sprites.set(n, sp);
       }
-      cam.current = { x: 0, y: 0, k: 1 };
+      if (!userMoved.current) resetCamera();
       resizeRenderer();
       fullDirty.current = true;
       scheduleRender(true);
@@ -362,26 +485,17 @@ export default function GraphView() {
     }
   };
 
-  // Frame the dense core: center on the median position and scale so the bulk of
-  // the nodes (a percentile, ignoring far-flung outlier clusters) fills the view.
-  // Fitting the full extent would shrink a sprawling graph to a dot in the middle.
-  const fitView = () => {
-    const nodes = nodesRef.current;
+  // Obsidian's initial viewport: scale 1 in DEVICE pixels (no zoom-to-fit), the
+  // spawn point centered — the graph blooms outward past the edges and the user
+  // pans/zooms from there. In CSS pixels that's k = 1/devicePixelRatio.
+  const resetCamera = () => {
     const wrap = wrapRef.current;
-    if (!nodes.length || !wrap) return;
-    const xs = nodes.map((n) => n.x ?? 0).sort((a, b) => a - b);
-    const ys = nodes.map((n) => n.y ?? 0).sort((a, b) => a - b);
-    const mid = (arr: number[]) => arr[Math.floor(arr.length / 2)];
-    const cxw = mid(xs);
-    const cyw = mid(ys);
-    const dists = nodes.map((n) => Math.hypot((n.x ?? 0) - cxw, (n.y ?? 0) - cyw)).sort((a, b) => a - b);
-    const rad = Math.max(1, dists[Math.floor(dists.length * 0.82)] || dists[dists.length - 1] || 1);
-    const W = wrap.clientWidth || 900;
-    const H = wrap.clientHeight || 600;
-    const margin = 80;
-    const k = Math.max(0.05, Math.min((W - margin) / (2 * rad), (H - margin) / (2 * rad), 1.5));
-    cam.current = { k, x: W / 2 - cxw * k, y: H / 2 - cyw * k };
-    scheduleRender(false);
+    const W = wrap?.clientWidth || 900;
+    const H = wrap?.clientHeight || 600;
+    const k = 1 / dprNow();
+    cam.current = { k, x: (W / 2) * (1 - k), y: (H / 2) * (1 - k) };
+    zoomTarget.current = 1; // device scale, like Obsidian's scale = targetScale = 1
+    zoomAnchor.current = null;
   };
 
   const applyDisplay = () => {
@@ -389,10 +503,10 @@ export default function GraphView() {
     if (!p) return;
     const s = sref.current;
     p.cols = getCols();
+    const k = cam.current.k || 1;
     for (const [n, sp] of p.sprites) {
       sp.tint = n === hover.current ? p.cols.accentHover : colorOf(n, p.cols);
-      const mul = n === hover.current ? 1.25 : 1;
-      sp.scale.set((nodeRadius(n, s) * mul) / TEXR);
+      sp.scale.set(spriteScale(n, s, k));
     }
     scheduleRender(true);
   };
@@ -451,6 +565,43 @@ export default function GraphView() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pane ⋯ menu → "Copy screenshot": extract the Pixi stage to a PNG.
+  // (Reading the WebGL canvas directly would be blank — no preserveDrawingBuffer.)
+  useEffect(() => {
+    const onShot = async () => {
+      const p = pixi.current;
+      if (!p) return;
+      try {
+        p.app.render();
+        const src = p.app.renderer.extract.canvas(p.app.stage) as HTMLCanvasElement;
+        const out = document.createElement('canvas');
+        out.width = src.width;
+        out.height = src.height;
+        const ctx = out.getContext('2d')!;
+        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg-primary').trim() || '#ffffff';
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(src, 0, 0);
+        const blob = await new Promise<Blob | null>((res) => out.toBlob(res, 'image/png'));
+        if (!blob) throw new Error('toBlob failed');
+        if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          useStore.getState().notify('Graph screenshot copied');
+        } else {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'graph.png';
+          a.click();
+          URL.revokeObjectURL(a.href);
+          useStore.getState().notify('Graph screenshot downloaded');
+        }
+      } catch {
+        useStore.getState().notify('Screenshot failed');
+      }
+    };
+    window.addEventListener('wo-graph-screenshot', onShot);
+    return () => window.removeEventListener('wo-graph-screenshot', onShot);
   }, []);
 
   // fetch the raw graph once
@@ -538,11 +689,20 @@ export default function GraphView() {
 
       const nodeMap = new Map(nodeList.map((n) => [n.id, n] as const));
       const linkList: GLink[] = [];
+      const adj = new Map<GNode, Set<GNode>>();
       for (const l of pairList) {
         const a = nodeMap.get(l.source);
         const b = nodeMap.get(l.target);
-        if (a && b) linkList.push({ source: a, target: b });
+        if (a && b) {
+          linkList.push({ source: a, target: b });
+          if (!adj.has(a)) adj.set(a, new Set());
+          if (!adj.has(b)) adj.set(b, new Set());
+          adj.get(a)!.add(b);
+          adj.get(b)!.add(a);
+        }
       }
+      nodeList.forEach((n) => (n.fade = 1));
+      adjRef.current = adj;
 
       nodesRef.current = nodeList;
       linksRef.current = linkList;
@@ -557,31 +717,29 @@ export default function GraphView() {
       const W = wrap.clientWidth || 900;
       const H = wrap.clientHeight || 600;
 
+      // Obsidian spawns every node at the origin and lets the sim "big-bang"
+      // outward at fixed zoom. A tiny phyllotaxis disc at the center reproduces
+      // that bloom without degenerate coincident points.
       nodeList.forEach((n, i) => {
-        const a = (i / Math.max(1, nodeList.length)) * Math.PI * 2;
-        n.x = W / 2 + Math.cos(a) * 250;
-        n.y = H / 2 + Math.sin(a) * 250;
+        const r = 2 * Math.sqrt(i + 0.5);
+        const a = i * 2.39996; // golden angle
+        n.x = W / 2 + Math.cos(a) * r;
+        n.y = H / 2 + Math.sin(a) * r;
       });
 
+      // Obsidian's exact simulation (sim.js): d3-force with these params.
       simRef.current?.stop();
       sim = forceSimulation<GNode>(nodeList)
-        .force('charge', forceManyBody<GNode>().strength(chargeStrength(s)).theta(0.85).distanceMax(1400))
-        .force('link', forceLink<GNode, GLink>(linkList).distance(linkDist(s)).strength(linkStr(s)))
-        .force('center', forceCenter(W / 2, H / 2).strength(centerStr(s)))
-        .force('collide', forceCollide<GNode>((n) => nodeRadius(n, s) + 3).iterations(1))
+        .force('charge', forceManyBody<GNode>().strength(chargeStrength(s)).theta(0.9).distanceMin(30))
+        .force('link', forceLink<GNode, GLink>(linkList).distance(linkDist(s)).strength(linkStrength(s)))
+        .force('x', forceX(W / 2).strength(centerStr(s)))
+        .force('y', forceY(H / 2).strength(centerStr(s)))
+        .force('collide', forceCollide<GNode>(60).strength(0.5).iterations(1))
         .alpha(1)
-        .alphaDecay(0.025)
-        .velocityDecay(0.35);
+        .alphaDecay(1 - Math.pow(0.001, 1 / 300))
+        .velocityDecay(0.4);
       userMoved.current = false;
-      let ticks = 0;
-      sim.on('tick', () => {
-        // keep the expanding graph framed until the user takes over
-        if (!userMoved.current && ++ticks % 12 === 0) fitView();
-        scheduleRender(true);
-      });
-      sim.on('end', () => {
-        if (!userMoved.current) fitView();
-      });
+      sim.on('tick', () => scheduleRender(true));
       simRef.current = sim;
       setSceneVersion((v) => v + 1); // tell the renderer to (re)create sprites
     } catch (err) {
@@ -612,9 +770,10 @@ export default function GraphView() {
     if (!sim) return;
     const s = sref.current;
     (sim.force('charge') as ReturnType<typeof forceManyBody<GNode>> | undefined)?.strength(chargeStrength(s));
-    (sim.force('link') as ReturnType<typeof forceLink<GNode, GLink>> | undefined)?.distance(linkDist(s)).strength(linkStr(s));
-    (sim.force('center') as ReturnType<typeof forceCenter> | undefined)?.strength(centerStr(s));
-    sim.alpha(0.5).restart();
+    (sim.force('link') as ReturnType<typeof forceLink<GNode, GLink>> | undefined)?.distance(linkDist(s)).strength(linkStrength(s));
+    (sim.force('x') as ReturnType<typeof forceX<GNode>> | undefined)?.strength(centerStr(s));
+    (sim.force('y') as ReturnType<typeof forceY<GNode>> | undefined)?.strength(centerStr(s));
+    sim.alpha(0.3).restart(); // Obsidian posts alpha .3 on force changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.repelForce, settings.linkForce, settings.linkDistance, settings.centerForce]);
 
@@ -641,18 +800,22 @@ export default function GraphView() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // Obsidian's onWheel: targetScale ×= 1.5^(−ΔY/120) clamped to [1/128, 8]
+    // (device scale); zooming IN anchors at the cursor, zooming OUT at the
+    // viewport center. The actual scale eases toward the target in stepZoom().
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const v = cam.current;
-      const speed = e.ctrlKey ? 0.012 : 0.0018;
-      const factor = Math.exp(-e.deltaY * speed);
-      const nk = Math.max(0.04, Math.min(10, v.k * factor));
-      v.x = mx - ((mx - v.x) * nk) / v.k;
-      v.y = my - ((my - v.y) * nk) / v.k;
-      v.k = nk;
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 40;
+      else if (e.deltaMode === 2) dy *= 800;
+      const t = Math.min(SCALE_MAX, Math.max(SCALE_MIN, zoomTarget.current * Math.pow(1.5, -dy / 120)));
+      zoomTarget.current = t;
+      if (t < cam.current.k * dprNow()) {
+        zoomAnchor.current = null; // zoom out: anchor at viewport center
+      } else {
+        const rect = canvas.getBoundingClientRect();
+        zoomAnchor.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
       userMoved.current = true;
       scheduleRender(false);
     };
@@ -667,13 +830,14 @@ export default function GraphView() {
     const mx = clientX - rect.left;
     const my = clientY - rect.top;
     const { x: cx, y: cy, k } = cam.current;
+    const s = sref.current;
     let best: GNode | null = null;
-    let bestD = 14;
+    let bestD = Infinity;
     for (const n of nodesRef.current) {
       const px = (n.x ?? 0) * k + cx;
       const py = (n.y ?? 0) * k + cy;
       const d = Math.hypot(px - mx, py - my);
-      if (d < bestD) {
+      if (d < Math.max(12, screenRadius(n, s, k) + 2) && d < bestD) {
         bestD = d;
         best = n;
       }
@@ -684,25 +848,19 @@ export default function GraphView() {
   const setHover = (n: GNode | null) => {
     if (n === hover.current) return;
     const p = pixi.current;
-    const s = sref.current;
     if (p) {
       const prev = hover.current;
       if (prev) {
         const sp = p.sprites.get(prev);
-        if (sp) {
-          sp.tint = colorOf(prev, p.cols);
-          sp.scale.set(nodeRadius(prev, s) / TEXR);
-        }
+        if (sp) sp.tint = colorOf(prev, p.cols);
       }
       if (n) {
         const sp = p.sprites.get(n);
-        if (sp) {
-          sp.tint = p.cols.accentHover;
-          sp.scale.set((nodeRadius(n, s) * 1.25) / TEXR);
-        }
+        if (sp) sp.tint = p.cols.accentHover;
       }
     }
     hover.current = n;
+    edgesDirty.current = true; // hovered node's edges get the highlight color
     if (canvasRef.current) canvasRef.current.style.cursor = n ? 'pointer' : 'grab';
     scheduleRender(false);
   };
@@ -864,19 +1022,19 @@ function FilterPanel({
 
       <Section title="Display">
         <Toggle label="Arrows" checked={s.arrows} onChange={(v) => patch({ arrows: v })} />
-        <Slider label="Text fade threshold" value={s.textFade} onChange={(v) => patch({ textFade: v })} />
-        <Slider label="Node size" value={s.nodeSize} onChange={(v) => patch({ nodeSize: v })} />
-        <Slider label="Link thickness" value={s.linkThickness} onChange={(v) => patch({ linkThickness: v })} />
+        <Slider label="Text fade threshold" min={-3} max={3} step={0.1} value={s.textFade} onChange={(v) => patch({ textFade: v })} />
+        <Slider label="Node size" min={0.1} max={5} step={0.1} value={s.nodeSize} onChange={(v) => patch({ nodeSize: v })} />
+        <Slider label="Link thickness" min={0.1} max={5} step={0.1} value={s.linkThickness} onChange={(v) => patch({ linkThickness: v })} />
         <button className="btn" style={{ width: '100%', marginTop: 6 }} onClick={onAnimate}>
           Animate
         </button>
       </Section>
 
       <Section title="Forces">
-        <Slider label="Center force" value={s.centerForce} onChange={(v) => patch({ centerForce: v })} />
-        <Slider label="Repel force" value={s.repelForce} onChange={(v) => patch({ repelForce: v })} />
-        <Slider label="Link force" value={s.linkForce} onChange={(v) => patch({ linkForce: v })} />
-        <Slider label="Link distance" value={s.linkDistance} onChange={(v) => patch({ linkDistance: v })} />
+        <Slider label="Center force" min={0} max={1} step={0.01} value={s.centerForce} onChange={(v) => patch({ centerForce: v })} />
+        <Slider label="Repel force" min={0} max={20} step={0.1} value={s.repelForce} onChange={(v) => patch({ repelForce: v })} />
+        <Slider label="Link force" min={0} max={1} step={0.01} value={s.linkForce} onChange={(v) => patch({ linkForce: v })} />
+        <Slider label="Link distance" min={30} max={500} step={1} value={s.linkDistance} onChange={(v) => patch({ linkDistance: v })} />
       </Section>
     </div>
   );
@@ -934,10 +1092,16 @@ function Toggle({
 function Slider({
   label,
   value,
+  min,
+  max,
+  step,
   onChange,
 }: {
   label: string;
   value: number;
+  min: number;
+  max: number;
+  step: number;
   onChange: (v: number) => void;
 }) {
   return (
@@ -945,10 +1109,11 @@ function Slider({
       <span className="graph-row-label">{label}</span>
       <input
         type="range"
-        min={0}
-        max={1}
-        step={0.01}
+        min={min}
+        max={max}
+        step={step}
         value={value}
+        title={String(value)}
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
     </div>

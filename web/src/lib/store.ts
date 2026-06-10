@@ -30,16 +30,16 @@ export interface GraphSettings {
   orphans: boolean;
   // groups
   groups: GraphGroup[];
-  // display
+  // display (Obsidian's native ranges/defaults)
   arrows: boolean;
-  textFade: number; // 0..1, higher = labels show at lower zoom
-  nodeSize: number; // 0..1
-  linkThickness: number; // 0..1
-  // forces (all normalized 0..1)
-  centerForce: number;
-  repelForce: number;
-  linkForce: number;
-  linkDistance: number;
+  textFade: number; // -3..3, default 0 — higher = labels need more zoom
+  nodeSize: number; // 0.1..5, default 1
+  linkThickness: number; // 0.1..5, default 1
+  // forces (Obsidian's native ranges/defaults)
+  centerForce: number; // 0..1, default 0.52
+  repelForce: number; // 0..20, default 10
+  linkForce: number; // 0..1, default 1
+  linkDistance: number; // 30..500, default 250
 }
 
 export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
@@ -50,13 +50,13 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   orphans: true,
   groups: [],
   arrows: false,
-  textFade: 0.5,
-  nodeSize: 0.5,
-  linkThickness: 0.5,
-  centerForce: 0.5,
-  repelForce: 0.5,
-  linkForce: 0.5,
-  linkDistance: 0.5,
+  textFade: 0,
+  nodeSize: 1,
+  linkThickness: 1,
+  centerForce: 0.52,
+  repelForce: 10,
+  linkForce: 1,
+  linkDistance: 250,
 };
 
 export interface ContextMenuItem {
@@ -165,6 +165,25 @@ function pickPersisted(s: any): Record<string, unknown> {
   return o;
 }
 
+/**
+ * Merge persisted graph settings over defaults. Settings saved before the move
+ * to Obsidian-native slider units (all sliders were normalized 0..1) are detected
+ * by linkDistance ≤ 1 — keep the filters/groups but reset display/forces.
+ */
+function migrateGraphSettings(gs: unknown): GraphSettings {
+  if (!gs || typeof gs !== 'object') return DEFAULT_GRAPH_SETTINGS;
+  const merged = { ...DEFAULT_GRAPH_SETTINGS, ...(gs as Partial<GraphSettings>) };
+  if (typeof merged.linkDistance !== 'number' || merged.linkDistance <= 1) {
+    const d = DEFAULT_GRAPH_SETTINGS;
+    Object.assign(merged, {
+      textFade: d.textFade, nodeSize: d.nodeSize, linkThickness: d.linkThickness,
+      centerForce: d.centerForce, repelForce: d.repelForce, linkForce: d.linkForce,
+      linkDistance: d.linkDistance,
+    });
+  }
+  return merged;
+}
+
 function applyPersisted(s: any, set: (p: any) => void): void {
   set({
     tabs: Array.isArray(s.tabs) ? s.tabs : [],
@@ -177,10 +196,7 @@ function applyPersisted(s: any, set: (p: any) => void): void {
     leftPanel: ['files', 'search', 'tags', 'bookmarks'].includes(s.leftPanel) ? s.leftPanel : 'files',
     leftOpen: s.leftOpen !== false,
     rightOpen: s.rightOpen !== false,
-    graphSettings:
-      s.graphSettings && typeof s.graphSettings === 'object'
-        ? { ...DEFAULT_GRAPH_SETTINGS, ...s.graphSettings }
-        : DEFAULT_GRAPH_SETTINGS,
+    graphSettings: migrateGraphSettings(s.graphSettings),
   });
 }
 

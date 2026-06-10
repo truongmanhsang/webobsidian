@@ -123,6 +123,9 @@ Cập nhật lần cuối: 2026-06-10
 - [ ] Resolve conflict UI nâng cao cho git
 - [ ] Lazy-load cây thư mục cực lớn; canvas/whiteboard
 - [ ] ESLint/Prettier CI; live-preview render bảng/danh sách lồng sâu nhiều cấp
+- [ ] Graph: port d3-force simulation sang web worker (như Obsidian app chạy worker + WASM)
+      để UI không khựng lúc graph 5.9k node đang "nở" — physics/render đã parity, chỉ còn
+      kiến trúc thread (xem sim.js trong obsidian.asar; web giữ nguyên tham số, chỉ chuyển chỗ chạy)
 
 ---
 
@@ -391,3 +394,69 @@ Cập nhật lần cuối: 2026-06-10
   React PublicNote (SSR thay thế), vite proxy thêm /share. Verify curl: locked → noindex + không leak,
   mở khoá → đủ meta + content + img + CSS inline, id sai → 404 noindex; Chrome context cô lập: form
   unlock sai báo lỗi, đúng → reload ra note y hệt Reading view. Typecheck + build sạch.
+- 2026-06-10: Graph view — sửa layout lệch xa Obsidian (đồ thị bị tãi thành sợi, cụm rời bay
+  tứ tán, hub tag thành "bồ công anh" gai): (1) thay `forceCenter` (chỉ tịnh tiến trọng tâm,
+  không hút) bằng gravity thật `forceX`+`forceY` map theo slider Center force; (2) link strength
+  chuyển sang adaptive kiểu d3 mặc định `slider/min(deg)` để cụm quanh hub nén thành đĩa đặc;
+  (3) cap hệ số repel theo bậc (hub ~2× leaf thay vì ~8×) + distanceMax 900; (4) khởi tạo vị trí
+  bằng xoắn ốc phyllotaxis thay vì cả 5.4k node trên một vòng tròn r=250; (5) link distance mặc
+  định 100→50, alphaDecay 0.02; (6) node tag đổi màu xanh lá kiểu Obsidian. Verify Chrome trên
+  vault thật 5.9k note: đồ thị tụ thành khối cầu liên kết với tag xanh phân bố đều, label/zoom
+  ổn, console sạch. Typecheck + build sạch.
+- 2026-06-10: Graph view — đồng bộ slider với đơn vị/mặc định gốc của Obsidian app: Text fade
+  -3..3=0, Node size 0.1..5=1, Link thickness 0.1..5=1, Center force 0..1=0.52, Repel force
+  0..20=10, Link force 0..1=1, Link distance 30..500=250 (map nội bộ về tham số d3 đã calibrate
+  để mặc định cho ra layout như bản tune). Panel Filters mặc định collapsed — chỉ hiện cog icon
+  như Obsidian. Migration: graphSettings cũ (thang 0..1) persist server-side được detect qua
+  linkDistance ≤ 1 → reset display/forces về mặc định mới, giữ filters/groups. Verify Chrome:
+  panel đóng + cog, mở panel slider đúng min/max/value, layout giữ khối cầu. Typecheck + build sạch.
+- 2026-06-10: Graph view — port CHÍNH XÁC physics của Obsidian app bằng cách reverse-engineer
+  obsidian.asar cài trên máy (sim.js = d3-force chạy trong worker + WASM, app.js = panel/renderer):
+  charge = -repelSlider³ (mặc định 10 → -1000, distanceMin 30, theta .9, KHÔNG distanceMax);
+  link distance = slider nguyên gốc (250); link strength = slider × 1/min(deg) (adaptive d3);
+  gravity forceX/Y với strength = MJ easing (0.01^(1-e)-0.01)/0.99 → 0.52 ⇒ 0.1; collide bán kính
+  cố định 60 strength 0.5; alphaDecay 1-0.001^(1/300); velocityDecay 0.4. Node radius theo
+  getSize() của Obsidian: nodeSize × clamp(3√(deg+1), 8, 30). Cạnh vẽ độ dày cố định theo màn hình
+  (lineSizeMult/scale) màu nhạt; node note màu xám (không phải accent). Kết quả: đồ thị co thành
+  hình cầu một khối như app. Verify Chrome vault 5.9k note + typecheck/build sạch.
+- 2026-06-10: Graph view — hoàn tất parity render với Obsidian app (đào tiếp renderer trong
+  app.js): (1) node vẽ theo luật nodeScale = √(1/zoom) của Obsidian — bán kính màn hình =
+  getSize()·√k nên zoom out node vẫn to gần chạm nhau thành đĩa tổ ong đặc, cạnh chìm phía sau
+  (trước đó node co tuyến tính theo zoom → teo mất, chỉ còn thấy cạnh thành chùm "pháo hoa");
+  (2) label dùng fade toàn cục textAlpha = clamp(log₂(zoom) − textFade, 0, 1) như app (mặc định:
+  bắt đầu hiện sau zoom 1×, rõ hẳn ở 2×) thay vì ngưỡng theo bán kính từng node; (3) hit-test
+  hover/click + mũi tên + nhân scale hover đồng bộ theo bán kính màn hình mới. Không copy code
+  Obsidian — chỉ trích hằng số/công thức và viết lại trên d3-force (BSD). Verify Chrome side-by-side
+  với app trên cùng vault: khối cầu cụm đặc tương đồng. Typecheck + build sạch.
+- 2026-06-10: Reverse engineering toàn diện Obsidian Desktop 1.12.7 (extract obsidian.asar:
+  app.js 3.6MB, app.css 588KB, main.js, worker.js, sim.js) bằng 4 agent song song. Ghi tri thức
+  vào docs/obsidian-desktop-internals.md (22 mục): regex chính xác Markdown dialect (wikilink/
+  callout/tag/block-id/footnote), luật link resolution 6 bước, schema đầy đủ .obsidian/* +
+  workspace.json + graph.json + .canvas + .base, grammar search operators, thuật toán fuzzy có
+  công thức điểm, hằng số d3-force graph (velocityDecay 0.6, repel −slider³, slider curve),
+  cơ chế Live Preview/reading view (DOMPurify config, embed depth ≤5), 196 command id + hotkey
+  mặc định, registry 31 core plugins, toàn bộ CSS design tokens 2 theme + DOM class + bảng
+  14 nhóm callout. Dùng làm tài liệu gốc khi clone tính năng về sau.
+- 2026-06-10: Graph view — sao chép hành vi viewport của Obsidian app: khởi tạo scale = 1 theo
+  DEVICE pixel (CSS k = 1/devicePixelRatio), tâm spawn đặt giữa khung, KHÔNG auto zoom-to-fit
+  (bỏ fitView chạy theo tick — chính nó làm mức zoom hai bên lệch nhau nên cùng một node thấy
+  mật độ/khoảng cách khác nhau); node spawn "big bang" từ đĩa phyllotaxis nhỏ ở tâm và nở ra
+  như app. Bật lại Orphans trong uistate đã lưu (mặc định Obsidian = on; 2.289 orphan lấp đầy
+  khoảng trống giữa các cụm — thiếu chúng nên trước đó nhìn "rỗng" hơn app). Sau sửa: cùng mức
+  zoom, khoảng cách node/cỡ node trùng app vì physics + luật render + viewport đều giống nhau.
+  Verify Chrome zoom vào hub #FRT so với app. Typecheck + build sạch.
+- 2026-06-10 (tiếp): Graph view — hoàn tất parity zoom/spacing/typography với Obsidian app
+  (đào tiếp app.js + đọc toàn bộ sim.js): (1) mọi luật scale chuyển sang DEVICE pixel như app
+  (bán kính node màn hình = getSize·√scale_device → trên Retina node nhỏ lại √dpr, khoảng cách
+  cụm khớp app); (2) wheel zoom đúng công thức app: target ×= 1.5^(−ΔY/120), clamp [1/128, 8],
+  zoom-in neo cursor / zoom-out neo tâm, scale lerp 15%/frame (mượt như app); (3) label theo
+  đúng renderer app: fontSize 14 + getSize()/4, font stack ui-sans-serif…, scale = nodeScale
+  (co theo √zoom như node), offset (getSize+5)·nodeScale, hover không nhỏ hơn 1/scale;
+  textAlpha = clamp(log₂(scale_device) + 1 − fade, 0, 1) (trước thiếu +1 và dpr → label hiện
+  muộn 4×); bỏ greedy declutter tự chế (app không có); (4) cạnh dày đúng lineSizeMult DEVICE px
+  (trước dày gấp dpr lần), mũi tên fade theo clamp(2·(scale−0.3),0,1), size 2√mult/scale;
+  (5) hover fade kiểu app: node/cạnh không nối với node hover mờ dần về alpha 0.2 (lerp 0.9/frame),
+  cạnh nối đổi màu highlight; bỏ phóng to 1.25 khi hover (app không phóng); (6) sim.alpha(0.3)
+  khi đổi forces (app post alpha .3); thêm hook window.__graphCam cho automated UI test.
+  Verify trên Chrome vault thật 5.9k notes: khối cầu + vòng orphan tổ ong, label hiện đúng
+  ngưỡng scale ~0.5–1, hover dim chuẩn, console sạch, typecheck + build sạch.
