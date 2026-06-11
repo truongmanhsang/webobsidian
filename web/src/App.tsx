@@ -9,6 +9,7 @@ import Workspace from './components/Workspace';
 import CommandPalette from './components/CommandPalette';
 import Settings from './components/Settings';
 import ShareDialog from './components/ShareDialog';
+import VersionHistory from './components/VersionHistory';
 import ContextMenu from './components/ContextMenu';
 import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
@@ -177,6 +178,7 @@ export default function App() {
       <CommandPalette />
       <Settings />
       <ShareDialog />
+      <VersionHistory />
       <ContextMenu />
       {toast && <div className="toast">{toast}</div>}
     </div>

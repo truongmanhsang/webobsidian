@@ -146,6 +146,11 @@ interface AppState {
   /** Note path whose Share dialog is open (null = closed). */
   shareDialogPath: string | null;
   setShareDialog: (path: string | null) => void;
+  /** Note path whose Version history modal is open (null = closed). */
+  versionHistoryPath: string | null;
+  setVersionHistory: (path: string | null) => void;
+  /** Expand ancestor folders + scroll the file into view in the file tree. */
+  revealInTree: (path: string) => void;
 
   toast: string;
   notify: (msg: string) => void;
@@ -375,6 +380,28 @@ export const useStore = create<AppState>()(
       },
       shareDialogPath: null,
       setShareDialog: (path) => set({ shareDialogPath: path }),
+      versionHistoryPath: null,
+      setVersionHistory: (path) => set({ versionHistoryPath: path }),
+      revealInTree: (path) => {
+        // Expand every ancestor folder so the file's row is rendered, open the
+        // Files panel, then let FileTree scroll the now-visible row into view.
+        const segs = path.split('/');
+        segs.pop();
+        const ancestors: string[] = [];
+        let acc = '';
+        for (const s of segs) {
+          acc = acc ? `${acc}/${s}` : s;
+          ancestors.push(acc);
+        }
+        set((st) => ({
+          expanded: Array.from(new Set([...st.expanded, ...ancestors])),
+          leftPanel: 'files',
+          leftOpen: true,
+        }));
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('wo-reveal-file', { detail: { path } }));
+        }, 60);
+      },
 
       toast: '',
       notify: (msg) => {

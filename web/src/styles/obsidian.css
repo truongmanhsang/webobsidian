@@ -1151,3 +1151,41 @@ button { font-family: inherit; }
 .share-url { display: flex; gap: 6px; margin: 4px 0 10px; }
 .share-url .text-input { flex: 1; min-width: 0; }
 .share-dialog-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* ---- Reveal file in navigation: brief highlight of the targeted row ---- */
+.tree-row.reveal-flash { animation: wo-reveal-flash 1.2s ease-out; }
+@keyframes wo-reveal-flash {
+  0%, 35% { background: var(--text-accent); color: var(--text-on-accent); }
+  100% { background: transparent; }
+}
+
+/* ---- Version history modal ---- */
+.version-history { width: 820px; height: 70vh; max-height: 720px; }
+.vh-head { display: flex; gap: 10px; align-items: center; padding: 12px 16px;
+  border-bottom: 1px solid var(--bg-modifier-border); color: var(--text-normal); }
+.vh-title { font-weight: 700; font-size: 15px; }
+.vh-path { color: var(--text-muted); font-size: 12px; word-break: break-all; flex: 1; }
+.vh-body { display: flex; flex: 1; min-height: 0; }
+.vh-list { width: 280px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid var(--bg-modifier-border); padding: 6px; }
+.vh-empty { color: var(--text-faint); font-size: 13px; padding: 16px; text-align: center; }
+.vh-item { padding: 8px 10px; border-radius: var(--radius-s); cursor: pointer; }
+.vh-item:hover { background: var(--bg-modifier-hover); }
+.vh-item.active { background: var(--bg-modifier-active); }
+.vh-item-msg { color: var(--text-normal); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vh-item-meta { color: var(--text-faint); font-size: 11px; margin-top: 2px; }
+.vh-preview { flex: 1; min-width: 0; overflow: auto; padding: 12px 16px; }
+.vh-preview pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12.5px;
+  font-family: var(--font-monospace, ui-monospace, monospace); color: var(--text-normal); }
+.vh-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px;
+  border-top: 1px solid var(--bg-modifier-border); }
+
+/* ---- Export to PDF: print only the rendered note (Reading view) ---- */
+@media print {
+  .ribbon, .sidebar, .right-sidebar, .tab-bar, .view-header, .format-toolbar,
+  .status-bar, .toast, .context-menu, .modal-bg, .drawer-backdrop { display: none !important; }
+  html, body, #root, .app, .workspace, .editor-area { height: auto !important; overflow: visible !important;
+    display: block !important; background: #fff !important; }
+  .markdown-source-view, .markdown-preview { color: #000 !important; }
+  .cm-host { height: auto !important; }
+  @page { margin: 16mm; }
+}

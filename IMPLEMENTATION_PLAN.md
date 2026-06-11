@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-11 (Deploy hardening — .env-driven compose + watcher polling fallback)
+Cập nhật lần cuối: 2026-06-11 (Phase 21 — Pane ⋯ menu parity Obsidian: Find, Reveal, Properties, Version history, PDF)
 
 ---
 
@@ -272,7 +272,48 @@ Cập nhật lần cuối: 2026-06-11 (Deploy hardening — .env-driven compose 
       đầu) → camera bay (pan+zoom lerp 15%/frame, zoom tối thiểu 2×) tới node + highlight kiểu
       hover (accent + dim phần không liên kết) tới khi di chuột; Esc đóng; wheel/drag hủy fly
 
+---
+
+## Phase 21 — Pane ⋯ menu parity Obsidian (theo yêu cầu người dùng, PRD 0.6)
+- [x] M21.1 Menu ⋯ dựng lại theo cấu trúc Obsidian Desktop: nhóm Backlinks in document →
+      Split/Open in new window → Rename/Move/Make a copy/Bookmark/Add file property/Export to PDF →
+      Find → Copy path/Version history/Open linked view → Reveal in navigation/Share → tabs → Delete
+- [x] M21.2 Find/Replace trong note: tích hợp `@codemirror/search` (search panel top, ⌘F/⌘⇧F/⌘G);
+      item "Find…" gọi `openSearchPanel` qua `editorFind()` (activeEditor handle)
+- [x] M21.3 Reveal file in navigation: `store.revealInTree` mở rộng folder tổ tiên + mở panel Files,
+      FileTree nghe event `wo-reveal-file` → scrollIntoView + flash highlight 1.2s (data-path lookup)
+- [x] M21.4 Add file property: KHÔNG dùng prompt — `triggerAddProperty(view)` kích hoạt đúng nút
+      "+ Add property" của Properties widget (focus ô key + mở dropdown gợi ý key như Obsidian); tạo
+      block `---` rỗng nếu note chưa có frontmatter rồi poll tới khi widget mount; menu chuyển Live trước.
+      Fix kèm trong widget: (a) dropdown giá trị list/tags bị treo sau khi chọn (dd mount trên theme
+      wrapper, không bị widget rebuild gỡ → `choose()` luôn `cleanup()` trước `mutate()`); (b) menu
+      Property type/Copy/Remove giật giật khi left-click icon (mở bằng `mousedown` rồi `click` kế tiếp
+      đóng ngay) → đổi sang `click` (openPropMenu đã `stopPropagation`)
+- [x] M21.5 Export to PDF: chuyển Reading view rồi `window.print()`; CSS `@media print` ẩn ribbon/
+      sidebar/tab/header/toolbar/status, chỉ in nội dung note (màu đen nền trắng, `@page` margin 16mm)
+- [x] M21.6 Open version history (FR-4): server `git.log(path)` + `git.showFile(hash, path)` →
+      routes `GET /api/git/log|/show`; modal `VersionHistory.tsx` liệt kê commit chạm file, preview
+      nội dung version, "Restore this version" ghi đè + reload; rỗng khi chưa bật Git Sync
+- [x] M21.7 Open in new window: `window.open(pathToUrl(path))` mở deep-link `/note/<path>` ở tab mới;
+      Open linked view submenu (Backlinks/Outgoing links/Outline → `setRightPanel`)
+
 ### Nhật ký tiến độ
+- 2026-06-11 (Commit message mô tả): commit vault tự sinh title nêu rõ note nào đổi thay vì
+  "WebObsidian auto-sync" chung chung. `describeChanges(StatusResult)` gom file theo Added/Modified/
+  Deleted/Renamed → subject 1 dòng (`Add <note>` / `Sync N notes (3 new, 2 edited): a, b, c +X more`)
+  + body liệt kê từng path (cap 100). `commitAll()` dùng subject tự sinh khi không có message tay;
+  bỏ message generic ở autosync/auto-commit-on-save/nút Commit. Phục vụ cả Version History UI.
+- 2026-06-11 (Phase 21 — Pane ⋯ menu parity): bổ sung tính năng menu 3-chấm góc phải note cho khớp
+  Obsidian app (theo yêu cầu người dùng). Mới: **Find/Replace** trong note (`@codemirror/search`,
+  panel top, item "Find…" → `editorFind()`); **Reveal file in navigation** (`store.revealInTree`
+  mở folder tổ tiên + scrollIntoView + flash, FileTree nghe `wo-reveal-file`, row có `data-path`);
+  **Add file property** (chèn key rỗng vào frontmatter YAML, tạo block nếu chưa có); **Export to PDF**
+  (Reading view → `window.print()` + CSS `@media print` chỉ in nội dung note); **Open version history**
+  (server `git.log`/`git.showFile` + routes `/api/git/log|/show`, modal `VersionHistory.tsx` list
+  commit + preview + Restore); **Open in new window** (`window.open(/note/<path>)`); **Backlinks in
+  document** + **Open linked view** submenu (→ `setRightPanel`). Menu dựng lại theo thứ tự nhóm của
+  Obsidian Desktop. Bỏ qua "Reveal in Finder"/"Open in default app" (desktop-only, không hợp web).
+  Typecheck sạch cả 2 workspace. PRD bump 0.6 (FR-2/FR-4).
 - 2026-06-11 (Deploy hardening cho open-source self-host): rà soát các điểm gãy khi deploy lên VPS
   sạch (gặp thực tế khi deploy lên Synology NAS). (1) `docker-compose.yml` hardcode `./sample-vault`
   + port → người tự host phải sửa file tracked, và mỗi lần redeploy clobber. Fix: chuyển sang

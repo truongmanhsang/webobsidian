@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, type TreeNode } from '../lib/api';
 import Icon from './Icon';
@@ -168,6 +168,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     <div className="tree-item">
       <div
         className={`tree-row ${activePath === node.path ? 'active' : ''}`}
+        data-path={node.path}
         draggable
         onDragStart={onDragStart}
         onClick={() => openFile(node.path)}
@@ -190,6 +191,23 @@ export default function FileTree() {
   const tree = useStore((s) => s.tree);
   const loadTree = useStore((s) => s.loadTree);
   const notify = useStore((s) => s.notify);
+
+  // "Reveal file in navigation": scroll + flash the row once its folders expand.
+  useEffect(() => {
+    const onReveal = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (!path) return;
+      requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(`.tree-row[data-path="${CSS.escape(path)}"]`);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('reveal-flash');
+        window.setTimeout(() => el.classList.remove('reveal-flash'), 1200);
+      });
+    };
+    window.addEventListener('wo-reveal-file', onReveal);
+    return () => window.removeEventListener('wo-reveal-file', onReveal);
+  }, []);
 
   const onRootDrop = async (e: React.DragEvent) => {
     e.preventDefault();

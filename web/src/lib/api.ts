@@ -39,6 +39,13 @@ export interface NoteMatches {
   contexts: MatchContext[];
 }
 
+export interface GitCommit {
+  hash: string;
+  date: string;
+  message: string;
+  author: string;
+}
+
 async function req<T>(url: string, opts: RequestInit = {}): Promise<T> {
   const { headers: optHeaders, ...rest } = opts;
   const res = await fetch(url, {
@@ -163,6 +170,10 @@ export const api = {
   gitPush: () => req<{ message: string }>('/api/git/push', { method: 'POST' }),
   gitSync: (message?: string) =>
     req<{ ok: boolean; log: string[] }>('/api/git/sync', { method: 'POST', body: JSON.stringify({ message }) }),
+  gitLog: (path: string) =>
+    req<{ commits: GitCommit[] }>(`/api/git/log?path=${encodeURIComponent(path)}`),
+  gitShow: (hash: string, path: string) =>
+    req<{ content: string }>(`/api/git/show?hash=${encodeURIComponent(hash)}&path=${encodeURIComponent(path)}`),
 
   // api keys
   listKeys: () => req<{ keys: any[] }>('/api/keys/'),

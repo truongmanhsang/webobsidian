@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Compartment, EditorState, Prec } from '@codemirror/state';
 import { EditorView, keymap, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { search, searchKeymap } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { syntaxHighlighting } from '@codemirror/language';
@@ -258,7 +259,9 @@ export default function Editor() {
             }),
           ),
         ),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        // In-document Find/Replace (⌘F / ⌘⇧F open the panel; ⌘G next).
+        search({ top: true }),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
         // GFM base so Strikethrough/Table/TaskList nodes exist (Obsidian dialect);
         // codeLanguages lazy-loads grammars for fenced blocks (Obsidian: Prism).
         markdown({ base: markdownLanguage, codeLanguages: languages }),

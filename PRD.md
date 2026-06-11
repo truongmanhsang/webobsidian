@@ -1,7 +1,15 @@
 # PRD — WebObsidian
 
 > Product Requirements Document
-> Phiên bản: 0.7 · Cập nhật: 2026-06-11 · Trạng thái: Draft
+> Phiên bản: 0.8 · Cập nhật: 2026-06-11 · Trạng thái: Draft
+> Changelog 0.8 (FR-2/FR-4 — menu ⋯ parity Obsidian theo yêu cầu người dùng): menu **More options (⋯)**
+> dựng lại theo cấu trúc Obsidian Desktop và bổ sung: **Backlinks in document** + **Open linked view**
+> (Backlinks/Outgoing links/Outline → mở right panel); **Open in new window** (mở deep-link `/note/<path>`
+> ở tab mới); **Add file property** (chèn property rỗng vào frontmatter YAML); **Find…** trong note
+> (`@codemirror/search`, ⌘F/⌘⇧F/⌘G); **Export to PDF…** (Reading view + `window.print()` qua CSS
+> `@media print`); **Reveal file in navigation** (mở folder tổ tiên + scroll/flash row trong file tree);
+> **Open version history** (FR-4): `git log`/`git show` cho từng file qua `/api/git/log|/show`, modal liệt
+> kê commit + preview + Restore version. Bỏ "Reveal in Finder"/"Open in default app" (desktop-only).
 > Changelog 0.7 (FR-10 UX theo phản hồi): menu "Copy public link" → "Share…" mở **Share dialog**
 > per-note (tạo link, copy URL, toggle bật/tắt, đặt/đổi password, xoá link) ở cả context menu file
 > tree lẫn menu ⋯ của pane; note đang share public có **icon globe** (màu accent) cạnh tên trong
@@ -124,11 +132,18 @@ webobsidian/
   - Backlinks: "Linked mentions" (đếm + danh sách) **và** "Unlinked mentions" (note nhắc tên note hiện tại
     bằng plain text mà chưa link — tìm qua QMD search, loại trừ note đã link).
   - Outgoing links: mọi wikilink trong note hiện tại, phân biệt resolved/unresolved, click để mở/tạo.
-- Menu **More options (⋯)** trên header mỗi pane (note lẫn Graph view), giống Obsidian:
-  - Note: Split right / Split down, Bookmark, Copy public link, Make a copy, Rename/Move/Copy path/Delete,
-    Close tab / Close other tabs.
+- Menu **More options (⋯)** trên header mỗi pane (note lẫn Graph view), dựng theo cấu trúc Obsidian Desktop:
+  - Note: Backlinks in document, Split right / Split down, Open in new window, Rename / Move file to / Make a
+    copy, Bookmark, Add file property, Export to PDF…, Find…, Copy path, Open version history, Open linked view
+    (Backlinks / Outgoing links / Outline), Reveal file in navigation, Share…, Close tab / Close other tabs, Delete.
   - Graph view: Copy screenshot (PNG vào clipboard), Close tab.
   - Split pane hỗ trợ 2 hướng: right (cạnh phải) và down (bên dưới); hướng split persist trong uistate.
+  - **Find/Replace trong note**: tích hợp `@codemirror/search` (panel top, ⌘F mở Find, ⌘⇧F Replace, ⌘G next).
+  - **Reveal file in navigation**: mở rộng folder tổ tiên + cuộn/nháy sáng row trong file tree.
+  - **Add file property**: chèn property rỗng vào frontmatter YAML (tạo block nếu chưa có) → render trong Properties widget.
+  - **Export to PDF**: chuyển Reading view rồi dùng print dialog của trình duyệt (CSS `@media print` chỉ in nội dung note).
+  - **Open in new window**: mở deep-link `/note/<path>` ở tab/cửa sổ trình duyệt mới.
+  - Lưu ý: "Reveal in Finder" / "Open in default app" của Obsidian Desktop không áp dụng cho web app nên không có.
 - Graph view (lực đẩy, từ wikilinks).
   - Tìm node trên graph: ô search nổi (góc trên-trái), gõ keywords → danh sách node khả dĩ
     (note/tag/attachment đang hiển thị trên graph); click hoặc Enter → camera bay (pan+zoom mượt)
@@ -144,6 +159,9 @@ webobsidian/
 - Thao tác: init/clone, pull, commit-all, push; hiển thị status (ahead/behind/dirty).
 - Auto-sync tuỳ chọn theo interval + on-save debounce.
 - Git LFS: cấu hình `.gitattributes` cho pattern lớn; track/push LFS.
+- **Version history per-file**: `git log` (commit chạm file, newest first) + `git show <hash>:<path>` qua
+  `GET /api/git/log` & `/api/git/show`; UI modal liệt kê version, preview nội dung, "Restore this version"
+  (ghi đè + reload). Rỗng khi vault chưa là git repo / chưa bật Git Sync.
 - Conflict: phát hiện, báo người dùng, chiến lược merge cơ bản (ưu tiên hỏi).
 
 ### FR-5 · Settings (JSON db)

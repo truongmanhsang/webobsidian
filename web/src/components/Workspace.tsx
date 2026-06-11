@@ -7,6 +7,9 @@ import Icon from './Icon';
 import StatusBar from './StatusBar';
 import FormatToolbar from './FormatToolbar';
 import { useIsMobile } from '../lib/useIsMobile';
+import { editorFind, getActiveEditor } from '../lib/activeEditor';
+import { triggerAddProperty } from '../lib/livePreview';
+import { pathToUrl } from '../lib/urlsync';
 
 function EditorPane() {
   const activePath = useStore((s) => s.activePath);
@@ -54,6 +57,10 @@ export default function Workspace() {
   const goBack = useStore((s) => s.goBack);
   const goForward = useStore((s) => s.goForward);
   const openContextMenu = useStore((s) => s.openContextMenu);
+  const setRightPanel = useStore((s) => s.setRightPanel);
+  const setShareDialog = useStore((s) => s.setShareDialog);
+  const setVersionHistory = useStore((s) => s.setVersionHistory);
+  const revealInTree = useStore((s) => s.revealInTree);
   const loadTree = useStore((s) => s.loadTree);
   const splitDirection = useStore((s) => s.splitDirection);
   const histIndex = useStore((s) => s.histIndex);
@@ -63,6 +70,31 @@ export default function Workspace() {
 
   const isMd = activePath ? /\.(md|markdown)$/i.test(activePath) : false;
   const canSplit = activePath ? /\.(md|markdown|txt|json|csv|canvas|css|js|ya?ml)$/i.test(activePath) : false;
+
+  // Obsidian's "Add file property": focus a new property-key field in the
+  // Properties widget with the key suggester open (NOT a text prompt). The
+  // widget only renders in Live Preview, so switch out of source/reading first.
+  const addFileProperty = () => {
+    if (useStore.getState().viewMode !== 'live') setViewMode('live');
+    // Let the editor swap modes / mount the Properties widget, then start the add.
+    window.setTimeout(() => {
+      const v = getActiveEditor();
+      if (v) triggerAddProperty(v);
+      else notify('Open the note to add a property');
+    }, 80);
+  };
+
+  // Export the rendered note via the browser's print dialog (→ Save as PDF).
+  // Switch to Reading view first so the full rendered document is laid out,
+  // then restore the previous mode after the dialog closes.
+  const exportToPdf = () => {
+    const prev = useStore.getState().viewMode;
+    setViewMode('reading');
+    window.setTimeout(() => {
+      window.print();
+      setViewMode(prev);
+    }, 200);
+  };
 
   // Per-pane "More options" (⋯) menu, like Obsidian's pane menu.
   const openMoreMenu = (e: React.MouseEvent) => {
@@ -86,66 +118,78 @@ export default function Workspace() {
         ...tabItems,
       ];
     } else {
+      const sep: ContextMenuItem = { label: '', separator: true };
+      const renameItem: ContextMenuItem = {
+        label: 'Rename…',
+        icon: 'pencil',
+        onClick: async () => {
+          const to = prompt('Rename / move to (vault-relative path):', path);
+          if (to && to !== path) {
+            await api.rename(path, to);
+            closeTab(path);
+            await loadTree();
+            await openFile(to);
+          }
+        },
+      };
+      const moveItem: ContextMenuItem = {
+        label: 'Move file to…',
+        onClick: async () => {
+          const i = path.lastIndexOf('/');
+          const dir = prompt('Move to folder (vault-relative, blank = root):', i < 0 ? '' : path.slice(0, i));
+          if (dir === null) return;
+          const to = dir ? `${dir.replace(/\/$/, '')}/${baseName}` : baseName;
+          if (to !== path) {
+            await api.rename(path, to);
+            closeTab(path);
+            await loadTree();
+            await openFile(to);
+          }
+        },
+      };
+      const copyItem: ContextMenuItem = {
+        label: 'Make a copy',
+        icon: 'file-plus',
+        onClick: async () => {
+          const r = await api.read(path).catch(() => null);
+          if (!r) return;
+          const body = typeof r === 'string' ? r : r.content;
+          const dot = path.lastIndexOf('.');
+          const copyPath = dot > 0 ? `${path.slice(0, dot)} copy${path.slice(dot)}` : `${path} copy`;
+          await api.write(copyPath, body);
+          await loadTree();
+          notify('Made a copy');
+        },
+      };
       items = [
+        ...(isMd ? [{ label: 'Backlinks in document', icon: 'link', onClick: () => setRightPanel('backlinks') }, sep] : []),
         ...(canSplit
           ? [
               { label: 'Split right', icon: 'columns', onClick: () => openToSide(path, 'right') },
               { label: 'Split down', icon: 'rows', onClick: () => openToSide(path, 'down') },
-              { label: '', separator: true },
             ]
           : []),
+        { label: 'Open in new window', icon: 'arrow-up-right', onClick: () => window.open(pathToUrl(path), '_blank', 'noopener') },
+        sep,
+        renameItem,
+        moveItem,
+        copyItem,
         { label: bookmarks.includes(path) ? 'Remove bookmark' : 'Bookmark', icon: 'bookmark', onClick: () => toggleBookmark(path) },
-        ...(isMd
+        ...(isMd ? [{ label: 'Add file property', icon: 'plus', onClick: addFileProperty }] : []),
+        ...(isMd ? [{ label: 'Export to PDF…', icon: 'file-pdf', onClick: exportToPdf }] : []),
+        ...(canSplit
           ? [
+              sep,
               {
-                label: 'Share…',
-                icon: 'globe',
-                onClick: () => useStore.getState().setShareDialog(path),
+                label: 'Find…',
+                icon: 'search',
+                onClick: () => {
+                  if (!editorFind()) notify('Open the note to search inside it');
+                },
               },
             ]
           : []),
-        {
-          label: 'Make a copy',
-          icon: 'file-plus',
-          onClick: async () => {
-            const r = await api.read(path).catch(() => null);
-            if (!r) return;
-            const body = typeof r === 'string' ? r : r.content;
-            const dot = path.lastIndexOf('.');
-            const copyPath = dot > 0 ? `${path.slice(0, dot)} copy${path.slice(dot)}` : `${path} copy`;
-            await api.write(copyPath, body);
-            await loadTree();
-            notify('Made a copy');
-          },
-        },
-        {
-          label: 'Rename…',
-          icon: 'pencil',
-          onClick: async () => {
-            const to = prompt('Rename / move to (vault-relative path):', path);
-            if (to && to !== path) {
-              await api.rename(path, to);
-              closeTab(path);
-              await loadTree();
-              await openFile(to);
-            }
-          },
-        },
-        {
-          label: 'Move file to…',
-          onClick: async () => {
-            const i = path.lastIndexOf('/');
-            const dir = prompt('Move to folder (vault-relative, blank = root):', i < 0 ? '' : path.slice(0, i));
-            if (dir === null) return;
-            const to = dir ? `${dir.replace(/\/$/, '')}/${baseName}` : baseName;
-            if (to !== path) {
-              await api.rename(path, to);
-              closeTab(path);
-              await loadTree();
-              await openFile(to);
-            }
-          },
-        },
+        sep,
         {
           label: 'Copy path',
           onClick: () => {
@@ -153,9 +197,33 @@ export default function Workspace() {
             notify('Path copied');
           },
         },
-        { label: '', separator: true },
+        { label: 'Open version history', icon: 'clock', onClick: () => setVersionHistory(path) },
+        ...(isMd
+          ? [
+              {
+                label: 'Open linked view',
+                icon: 'arrow-up-right',
+                submenu: [
+                  { label: 'Backlinks', icon: 'link', onClick: () => setRightPanel('backlinks') },
+                  { label: 'Outgoing links', icon: 'arrow-up-right', onClick: () => setRightPanel('outgoing') },
+                  { label: 'Outline', icon: 'list', onClick: () => setRightPanel('outline') },
+                ],
+              },
+            ]
+          : []),
+        sep,
+        {
+          label: 'Reveal file in navigation',
+          icon: 'folder',
+          onClick: () => {
+            revealInTree(path);
+            if (isMobile) setMobileDrawer('left');
+          },
+        },
+        ...(isMd ? [{ label: 'Share…', icon: 'globe', onClick: () => setShareDialog(path) }] : []),
+        sep,
         ...tabItems,
-        { label: '', separator: true },
+        sep,
         {
           label: 'Delete',
           danger: true,

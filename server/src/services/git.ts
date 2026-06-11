@@ -168,6 +168,41 @@ export async function status(): Promise<GitStatus> {
   };
 }
 
+export interface GitCommit {
+  hash: string;
+  date: string;
+  message: string;
+  author: string;
+}
+
+/**
+ * Recent commits touching `filePath` (vault-relative), newest first. Returns []
+ * when the vault isn't a git repo or the file has no history yet — the version
+ * history UI treats that as "no versions".
+ */
+export async function log(filePath: string, limit = 50): Promise<GitCommit[]> {
+  const g = await git();
+  if (!(await isRepo(g))) return [];
+  try {
+    const res = await g.log({ file: filePath, maxCount: limit });
+    return res.all.map((c) => ({
+      hash: c.hash,
+      date: c.date,
+      message: c.message,
+      author: c.author_name,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** File contents at a specific commit (`git show <hash>:<path>`). */
+export async function showFile(hash: string, filePath: string): Promise<string> {
+  const g = await git();
+  // simple-git's show() takes the pathspec as one element; `<hash>:<path>`.
+  return g.show([`${hash}:${filePath}`]);
+}
+
 export async function pull(): Promise<string> {
   const g = await git();
   await ensureLfsAttributes();

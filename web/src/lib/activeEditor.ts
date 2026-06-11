@@ -1,5 +1,6 @@
 import type { EditorView } from '@codemirror/view';
 import { undo, redo, indentMore, indentLess } from '@codemirror/commands';
+import { openSearchPanel } from '@codemirror/search';
 import { toggleInline, toggleChecklist, insertLink } from './editorCommands';
 
 /**
@@ -62,4 +63,11 @@ export function fmtUndo() {
 }
 export function fmtRedo() {
   if (active) { redo(active); active.focus(); }
+}
+
+/** Open the in-document Find/Replace panel (CM6 search panel includes both). */
+export function editorFind(): boolean {
+  if (!active) return false;
+  openSearchPanel(active);
+  return true;
 }

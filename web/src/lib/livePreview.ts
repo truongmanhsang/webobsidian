@@ -57,6 +57,32 @@ export function setLivePreviewPropertyTypeSetter(fn: (key: string, type: string)
   persistPropertyType = fn;
 }
 
+/**
+ * Start Obsidian's "Add file property" flow: focus a new property-key field in
+ * the Properties widget and open the key suggester dropdown — the same UI the
+ * widget's own "+ Add property" button drives. If the note has no frontmatter
+ * yet, an empty block is created first so the widget (and its button) renders.
+ * Requires Live Preview, non-readonly — the caller switches to live mode first.
+ */
+export function triggerAddProperty(view: EditorView): void {
+  const click = (): boolean => {
+    const btn = view.dom.querySelector<HTMLElement>('.cm-props-add');
+    if (!btn) return false;
+    btn.scrollIntoView({ block: 'nearest' });
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    return true;
+  };
+  if (click()) return;
+  if (!/^---\r?\n[\s\S]*?\r?\n---/.test(view.state.doc.toString())) {
+    view.dispatch({ changes: { from: 0, to: 0, insert: '---\n\n---\n\n' } });
+  }
+  // The widget mounts on the next decoration build; poll briefly for its button.
+  let tries = 0;
+  const iv = window.setInterval(() => {
+    if (click() || ++tries > 30) window.clearInterval(iv);
+  }, 25);
+}
+
 // Suggestions for list-property item values (vault tags for the `tags` property).
 let tagProvider: () => Promise<string[]> = async () => [];
 export function setLivePreviewTagProvider(fn: () => Promise<string[]>) {
@@ -1347,10 +1373,11 @@ class FrontmatterWidget extends WidgetType {
         if (done) return;
         done = true;
         const vv = sanitizeListValue(key, val);
-        if (!vv) {
-          cleanup();
-          return;
-        }
+        // Always tear down first: the dropdown is mounted on the theme wrapper
+        // (outside the widget DOM), so mutate()'s rebuild won't remove it — skip
+        // this and the suggester stays stuck on screen after picking a value.
+        cleanup();
+        if (!vv) return;
         mutate((ps) => ps[idx]?.values.push(vv));
       };
       const render = () => {
@@ -1423,7 +1450,11 @@ class FrontmatterWidget extends WidgetType {
       k.addEventListener('contextmenu', openPropMenu);
       icon.addEventListener('contextmenu', openPropMenu);
       icon.style.cursor = 'pointer';
-      icon.addEventListener('mousedown', openPropMenu); // click the icon also opens it
+      // Left-click the icon also opens the menu. Use `click` (not `mousedown`):
+      // openPropMenu stops propagation, so the trailing click never reaches the
+      // window close-listener — opening on mousedown let that click slam it shut
+      // again (the "jitter / won't open" on left-click).
+      icon.addEventListener('click', openPropMenu);
 
       const v = document.createElement('div');
       v.className = 'prop-val';
