@@ -55,8 +55,12 @@ export default function ContextMenu() {
   }, [menu, close]);
 
   if (!menu) return null;
-  const x = Math.min(menu.x, window.innerWidth - 240);
-  const y = Math.min(menu.y, window.innerHeight - menu.items.length * 30 - 16);
+  const margin = 8;
+  // Rough height estimate, but capped to the viewport so the menu can never be
+  // pushed off-screen; a too-tall menu is then made scrollable via CSS max-height.
+  const estHeight = Math.min(menu.items.length * 30 + 12, window.innerHeight - margin * 2);
+  const x = Math.max(margin, Math.min(menu.x, window.innerWidth - 240));
+  const y = Math.max(margin, Math.min(menu.y, window.innerHeight - estHeight - margin));
 
   return (
     <div className="context-menu" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>

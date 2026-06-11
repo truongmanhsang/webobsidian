@@ -20,6 +20,9 @@ const SettingsSchema = z.object({
   version: z.number().default(1),
   auth: z
     .object({
+      // Mật khẩu người dùng đã đổi. Rỗng = đang dùng mật khẩu mặc định (123456).
+      userPasswordHash: z.string().default(''),
+      // Mật khẩu override để khôi phục khi quên pass (sửa tay vào file). Rỗng = không có.
       passwordHash: z.string().default(''),
       jwtSecret: z.string().default(''),
     })
@@ -117,8 +120,22 @@ export async function loadSettings(): Promise<Settings> {
     const raw = await fs.readFile(SETTINGS_FILE, 'utf8');
     const parsed = SettingsSchema.parse(JSON.parse(raw));
     // Backfill secrets that may be empty in older files.
-    if (!parsed.auth.jwtSecret) parsed.auth.jwtSecret = randomBytes(48).toString('hex');
+    let dirty = false;
+    if (!parsed.auth.jwtSecret) {
+      parsed.auth.jwtSecret = randomBytes(48).toString('hex');
+      dirty = true;
+    }
+    // Migration: trước đây `passwordHash` là mật khẩu đăng nhập. Mô hình mới coi
+    // `passwordHash` là mật khẩu override và `userPasswordHash` là pass đăng nhập
+    // (rỗng = mặc định 123456). Để file cũ không bị backdoor bằng 123456, chuyển
+    // pass cũ sang `userPasswordHash` rồi xoá field override.
+    if (parsed.auth.passwordHash && !parsed.auth.userPasswordHash) {
+      parsed.auth.userPasswordHash = parsed.auth.passwordHash;
+      parsed.auth.passwordHash = '';
+      dirty = true;
+    }
     cache = parsed;
+    if (dirty) await persist(cache);
   } catch {
     cache = defaults();
     await persist(cache);
@@ -147,7 +164,11 @@ export async function updateSettings(
 export function redactSettings(s: Settings) {
   return {
     ...s,
-    auth: { hasPassword: Boolean(s.auth.passwordHash) },
+    auth: {
+      // hasCustomPassword=false nghĩa là đang dùng mật khẩu mặc định (123456).
+      hasCustomPassword: Boolean(s.auth.userPasswordHash),
+      hasOverridePassword: Boolean(s.auth.passwordHash),
+    },
     git: { ...s.git, token: s.git.token ? '••••••••' : '' },
     api: {
       ...s.api,

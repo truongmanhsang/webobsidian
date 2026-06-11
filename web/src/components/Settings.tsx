@@ -3,7 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import Icon from './Icon';
 
-type Section = 'vault' | 'git' | 'api' | 'sharing' | 'plugins' | 'appearance' | 'about';
+type Section = 'vault' | 'git' | 'api' | 'sharing' | 'plugins' | 'appearance' | 'account' | 'about';
 
 export default function Settings() {
   const open = useStore((s) => s.settingsOpen);
@@ -22,7 +22,7 @@ export default function Settings() {
       <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
         <div className="settings-layout">
           <div className="settings-nav">
-            {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'about'] as Section[]).map((s) => (
+            {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'account', 'about'] as Section[]).map((s) => (
               <button key={s} className={section === s ? 'active' : ''} onClick={() => setSection(s)}>
                 {labels[s]}
               </button>
@@ -35,6 +35,7 @@ export default function Settings() {
             {section === 'sharing' && <Shares />}
             {section === 'plugins' && <Plugins />}
             {settings && section === 'appearance' && <Appearance s={settings} />}
+            {section === 'account' && <AccountSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
             {section === 'about' && <About />}
           </div>
         </div>
@@ -50,6 +51,7 @@ const labels: Record<Section, string> = {
   sharing: 'Sharing',
   plugins: 'Community Plugins',
   appearance: 'Appearance',
+  account: 'Account',
   about: 'About',
 };
 
@@ -380,6 +382,79 @@ function Appearance({ s }: { s: any }) {
           <option value="obsidian-light">Obsidian Light</option>
         </select>
       </Row>
+    </div>
+  );
+}
+
+function AccountSettings({ s, reload }: { s: any; reload: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const usingDefault = !s?.auth?.hasCustomPassword;
+
+  const save = async () => {
+    setErr('');
+    setMsg('');
+    if (next.length < 6) {
+      setErr('Mật khẩu mới phải có ít nhất 6 ký tự');
+      return;
+    }
+    if (next !== confirm) {
+      setErr('Mật khẩu xác nhận không khớp');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.changePassword(current, next);
+      setMsg('Đã đổi mật khẩu ✓');
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+      await reload();
+    } catch (e: any) {
+      setErr(e?.message ?? 'Đổi mật khẩu thất bại');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Account</h2>
+      <p style={{ color: 'var(--text-muted)' }}>
+        Mật khẩu đăng nhập vào WebObsidian.
+        {usingDefault && (
+          <>
+            {' '}Bạn đang dùng <b>mật khẩu mặc định <code>123456</code></b> — hãy đổi mật khẩu để
+            bảo mật vault.
+          </>
+        )}
+      </p>
+      <Row name="Mật khẩu hiện tại" desc={usingDefault ? 'Mặc định là 123456' : undefined}>
+        <input className="text-input" type="password" style={{ width: 240 }} value={current}
+          onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+      </Row>
+      <Row name="Mật khẩu mới" desc="Tối thiểu 6 ký tự">
+        <input className="text-input" type="password" style={{ width: 240 }} value={next}
+          onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+      </Row>
+      <Row name="Xác nhận mật khẩu mới">
+        <input className="text-input" type="password" style={{ width: 240 }} value={confirm}
+          onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+      </Row>
+      {err && <div style={{ color: '#e5534b', margin: '6px 0' }}>{err}</div>}
+      {msg && <div style={{ color: 'var(--text-accent, #4caf50)', margin: '6px 0' }}>{msg}</div>}
+      <button className="btn" onClick={save} disabled={busy || !current || !next}>
+        {busy ? 'Đang lưu…' : 'Đổi mật khẩu'}
+      </button>
+      <p style={{ color: 'var(--text-faint)', fontSize: 12, marginTop: 16 }}>
+        Quên mật khẩu? Đặt <code>auth.passwordHash</code> trong <code>data/settings.json</code> hoặc
+        biến môi trường <code>WEBOBSIDIAN_PASSWORD</code> làm mật khẩu khôi phục (override) rồi đăng
+        nhập lại để đổi mật khẩu mới.
+      </p>
     </div>
   );
 }

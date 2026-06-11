@@ -2,9 +2,21 @@ import { scrypt, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import jwt from 'jsonwebtoken';
 import { getSettings, updateSettings } from './settings.js';
+import { config } from '../config.js';
 
 const scryptAsync = promisify(scrypt);
 const KEYLEN = 64;
+
+/** Mật khẩu mặc định khi cài đặt — dùng được ngay, không cần bước setup. */
+export const DEFAULT_PASSWORD = '123456';
+export const MIN_PASSWORD_LEN = 6;
+
+/** So sánh chuỗi an toàn về timing (cho override pass dạng plaintext). */
+function safeEqualStr(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
 
 /** scrypt$<saltHex>$<hashHex> */
 export async function hashPassword(password: string): Promise<string> {
@@ -22,23 +34,58 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return derived.length === expected.length && timingSafeEqual(derived, expected);
 }
 
+/**
+ * Luôn true: hệ thống luôn có mật khẩu đăng nhập hiệu dụng (tối thiểu là mặc
+ * định 123456). Giữ lại cho `/auth/status` và endpoint setup legacy.
+ */
 export async function isPasswordSet(): Promise<boolean> {
-  const s = await getSettings();
-  return Boolean(s.auth.passwordHash);
+  return true;
 }
 
-export async function setPassword(password: string): Promise<void> {
-  if (password.length < 6) throw new Error('Password must be at least 6 characters');
+/** Đã đổi pass khỏi mặc định chưa? */
+export async function hasCustomPassword(): Promise<boolean> {
+  const s = await getSettings();
+  return Boolean(s.auth.userPasswordHash);
+}
+
+/** Lưu mật khẩu người dùng mới (ghi đè pass mặc định/pass cũ). */
+export async function setUserPassword(password: string): Promise<void> {
+  if (password.length < MIN_PASSWORD_LEN) {
+    throw new Error(`Password must be at least ${MIN_PASSWORD_LEN} characters`);
+  }
   const hash = await hashPassword(password);
   await updateSettings((d) => {
-    d.auth.passwordHash = hash;
+    d.auth.userPasswordHash = hash;
   });
 }
 
+/**
+ * Kiểm tra mật khẩu đăng nhập. Chấp nhận:
+ *  1) Mật khẩu người dùng (userPasswordHash), hoặc mặc định 123456 nếu chưa đổi.
+ *  2) Mật khẩu override để khôi phục: auth.passwordHash (hash, sửa tay) hoặc
+ *     env WEBOBSIDIAN_PASSWORD (plaintext) — luôn được chấp nhận.
+ */
 export async function checkPassword(password: string): Promise<boolean> {
   const s = await getSettings();
-  if (!s.auth.passwordHash) return false;
-  return verifyPassword(password, s.auth.passwordHash);
+
+  // (1) Mật khẩu đăng nhập hiệu dụng.
+  if (s.auth.userPasswordHash) {
+    if (await verifyPassword(password, s.auth.userPasswordHash)) return true;
+  } else if (safeEqualStr(password, DEFAULT_PASSWORD)) {
+    return true;
+  }
+
+  // (2) Mật khẩu override (recovery) — luôn kiểm tra, kể cả khi đã đổi pass.
+  if (s.auth.passwordHash && (await verifyPassword(password, s.auth.passwordHash))) return true;
+  if (config.initialPassword && safeEqualStr(password, config.initialPassword)) return true;
+
+  return false;
+}
+
+/** Đổi mật khẩu: xác minh pass hiện tại rồi lưu pass mới. */
+export async function changePassword(current: string, next: string): Promise<void> {
+  if (!(await checkPassword(current))) throw new Error('Current password is incorrect');
+  await setUserPassword(next);
 }
 
 const TOKEN_TTL = '30d';

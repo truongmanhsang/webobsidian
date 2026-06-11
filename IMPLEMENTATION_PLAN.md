@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-11 (Phase 21 — Pane ⋯ menu parity Obsidian: Find, Reveal, Properties, Version history, PDF)
+Cập nhật lần cuối: 2026-06-11 (M2.5 — Pass mặc định 123456 + đổi mật khẩu trong Settings→Account + mật khẩu override khôi phục)
 
 ---
 
@@ -25,6 +25,7 @@ Cập nhật lần cuối: 2026-06-11 (Phase 21 — Pane ⋯ menu parity Obsidia
 - [x] M2.2 `POST /auth/setup`, `/auth/login`, `/auth/logout`, `GET /auth/me`
 - [x] M2.3 Middleware auth guard (httpOnly cookie), bảo vệ route
 - [x] M2.4 First-run setup flow (UI + env seed `WEBOBSIDIAN_PASSWORD`)
+- [x] M2.5 Pass mặc định 123456 + đổi mật khẩu (Settings→Account) + override khôi phục (`auth.passwordHash`/`WEBOBSIDIAN_PASSWORD`); migration pass cũ → `userPasswordHash`
 
 ## Phase 3 — Vault filesystem — FR-1
 - [x] M3.1 Service vault: list tree, read, write, create, rename/move, delete→trash
@@ -265,6 +266,13 @@ Cập nhật lần cuối: 2026-06-11 (Phase 21 — Pane ⋯ menu parity Obsidia
       visualViewport; **Desktop = thanh in-flow dưới view-header** (theo yêu cầu người dùng)
 - [x] M19.6 Viewport `viewport-fit=cover` + `interactive-widget=resizes-content` + safe-area insets;
       verify trên Chrome device emulation 390×844
+- [x] M19.7 Mobile parity vòng 2 (theo phản hồi người dùng): (a) menu "…" của note (ContextMenu) bị
+      cắt → clamp vị trí trong viewport (top/left ≥8px, ước lượng cao chặn theo `innerHeight`) +
+      `max-height: 100dvh` cuộn được, rows to hơn cho cảm ứng; (b) khoá pan ngang nội dung note
+      (`overflow-x: hidden` trên `.cm-host`/`.markdown-preview`, chữ wrap `overflow-wrap: anywhere`,
+      ảnh/code/bảng tự co/cuộn trong); (c) modal Settings + Version history full-screen trên mobile
+      (`position: fixed; inset:0`), settings-nav thành strip cuộn ngang, `.setting-row` stack dọc,
+      input full-width, version-history list xếp trên preview; share dialog full-width
 
 ## Phase 20 — Graph node search & jump (theo yêu cầu người dùng, PRD 0.5)
 - [x] M20.1 Ô "Find node…" nổi trên Graph view: gõ keywords → danh sách node khả dĩ (match
@@ -298,6 +306,30 @@ Cập nhật lần cuối: 2026-06-11 (Phase 21 — Pane ⋯ menu parity Obsidia
       Open linked view submenu (Backlinks/Outgoing links/Outline → `setRightPanel`)
 
 ### Nhật ký tiến độ
+- 2026-06-11 (Fix search trả 0 kết quả): server/data/qmd-index.json bị persist rỗng
+  (`documentCount: 0`, có thể do build chạy lúc vault tạm không đọc được). `QmdEngine.restore()`
+  load index rỗng đó rồi set `ready=true` → mọi truy vấn trả 0 và không bao giờ rebuild. Sửa: `restore()`
+  coi index 0-doc là cache miss (`return false`) để `initSearch()` build lại từ vault. Đã reindex live
+  (6048 docs). Typecheck server sạch.
+- 2026-06-11 (M2.5 — Đổi mật khẩu + pass mặc định + override): mô hình auth mới. Pass đăng nhập
+  mặc định `123456` (không cần bước setup); pass đã đổi lưu ở `auth.userPasswordHash` (rỗng = mặc
+  định). `auth.passwordHash` (settings.json, sửa tay) và env `WEBOBSIDIAN_PASSWORD` giờ là pass
+  override khôi phục, login luôn chấp nhận. Server: `checkPassword` kiểm tra pass hiệu dụng + 2 nguồn
+  override (`auth.ts`); endpoint `POST /auth/change-password` (requireAuth, verify pass cũ); bootstrap
+  không seed pass nữa; `redactSettings` trả `hasCustomPassword`/`hasOverridePassword`. Migration trong
+  `loadSettings`: file cũ có `passwordHash` → chuyển sang `userPasswordHash` (tránh backdoor 123456),
+  persist lại. Web: `api.changePassword`, tab Settings→Account form đổi pass + cảnh báo đang dùng pass
+  mặc định. Typecheck 2 workspace sạch. PRD FR-3 + data model cập nhật.
+- 2026-06-11 (M19.7 — Mobile parity vòng 2): vá 3 lỗi mobile người dùng báo. (1) Menu "…" của note bị
+  cắt dưới màn hình: `ContextMenu.tsx` clamp `x/y ≥ 8px` + ước lượng chiều cao chặn theo viewport (không
+  còn đẩy top âm), CSS mobile thêm `max-height: 100dvh; overflow-y:auto` cho `.context-menu` (submenu
+  hover desktop không ảnh hưởng vì media query) + rows 9px dễ chạm. (2) Nội dung note kéo ngang được
+  (pan/lệch layout): khoá `overflow-x:hidden` + `max-width:100vw` trên `.cm-host`/`.markdown-preview`,
+  chữ wrap `overflow-wrap:anywhere`, ảnh `max-width:100%`, bảng `display:block; overflow-x:auto`, code
+  giữ cuộn trong; `.prop-key` min-width 92px + prop-row wrap. (3) Modal Settings & Version history tràn
+  mép phải: `position:fixed; inset:0` full-screen, settings-nav thành strip cuộn ngang, `.setting-row`
+  stack dọc + input full-width (override inline width 260/120), version-history list xếp trên preview,
+  share dialog full-width; safe-area top cho nav/head. Build web sạch (7.4s).
 - 2026-06-11 (Commit message mô tả): commit vault tự sinh title nêu rõ note nào đổi thay vì
   "WebObsidian auto-sync" chung chung. `describeChanges(StatusResult)` gom file theo Added/Modified/
   Deleted/Renamed → subject 1 dòng (`Add <note>` / `Sync N notes (3 new, 2 edited): a, b, c +X more`)

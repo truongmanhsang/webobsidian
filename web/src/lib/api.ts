@@ -85,6 +85,11 @@ export const api = {
   login: (password: string) =>
     req<{ ok: true }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
   logout: () => req<{ ok: true }>('/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    req<{ ok: true }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
   me: () => req<{ authenticated: boolean }>('/auth/me'),
 
   // files

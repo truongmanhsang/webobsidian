@@ -1,7 +1,14 @@
 import { Router, type Request } from 'express';
 import { asyncHandler } from '../middleware/error.js';
 import { COOKIE_NAME, requireAuth } from '../middleware/auth.js';
-import { isPasswordSet, setPassword, checkPassword, issueToken } from '../services/auth.js';
+import {
+  isPasswordSet,
+  setUserPassword,
+  checkPassword,
+  changePassword,
+  issueToken,
+  MIN_PASSWORD_LEN,
+} from '../services/auth.js';
 
 export const authRouter = Router();
 
@@ -42,9 +49,32 @@ authRouter.post(
       res.status(400).json({ error: 'password required' });
       return;
     }
-    await setPassword(password);
+    await setUserPassword(password);
     const token = await issueToken();
     res.cookie(COOKIE_NAME, token, cookieOpts(req)).json({ ok: true });
+  }),
+);
+
+authRouter.post(
+  '/change-password',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = req.body ?? {};
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+      res.status(400).json({ error: 'currentPassword and newPassword required' });
+      return;
+    }
+    if (newPassword.length < MIN_PASSWORD_LEN) {
+      res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LEN} characters` });
+      return;
+    }
+    try {
+      await changePassword(currentPassword, newPassword);
+    } catch {
+      res.status(401).json({ error: 'Current password is incorrect' });
+      return;
+    }
+    res.json({ ok: true });
   }),
 );
 

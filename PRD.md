@@ -150,7 +150,13 @@ webobsidian/
     tới node, node được highlight kiểu hover (accent + dim phần không liên kết) tới khi di chuột.
 
 ### FR-3 · Login gate
-- Lần đầu chạy: set master password.
+- **Mật khẩu mặc định khi cài đặt: `123456`** — không cần bước setup, đăng nhập ngay được
+  bằng pass mặc định. settings.json mặc định **không** chứa mật khẩu nào.
+- Người dùng đổi mật khẩu trong Settings → Account (nhập pass hiện tại + pass mới). Hash mới
+  lưu ở `auth.userPasswordHash`. Khi field này rỗng nghĩa là đang dùng pass mặc định `123456`.
+- **Mật khẩu override (khôi phục khi quên pass):** `auth.passwordHash` trong `data/settings.json`
+  (sửa tay, dạng scrypt hash) **hoặc** biến môi trường `WEBOBSIDIAN_PASSWORD` (plaintext). Login
+  chấp nhận pass override **bất kể** người dùng đã đổi pass hay chưa. Mặc định không có override.
 - Đăng nhập 1 password → JWT trong httpOnly cookie.
 - Mọi route web & file API yêu cầu auth (trừ `/login`, healthcheck).
 
@@ -273,9 +279,10 @@ cùng một codebase React.
 
 ### Web/session API (cookie auth)
 ```
-POST   /auth/setup            # set password lần đầu
+POST   /auth/setup            # (legacy) set password lần đầu — vô hiệu khi đã có pass mặc định
 POST   /auth/login            # login → cookie
 POST   /auth/logout
+POST   /auth/change-password  # đổi pass: { currentPassword, newPassword } (yêu cầu auth)
 GET    /auth/me
 GET    /api/files            # cây thư mục
 GET    /api/files/*path      # đọc file (md/binary)
@@ -323,7 +330,9 @@ GET    /api/v1/tags
 ```jsonc
 {
   "version": 1,
-  "auth":   { "passwordHash": "scrypt$...", "jwtSecret": "..." },
+  "auth":   { "userPasswordHash": "scrypt$... (pass đã đổi; rỗng = dùng mặc định 123456)",
+              "passwordHash": "scrypt$... (override khôi phục; rỗng = không có)",
+              "jwtSecret": "..." },
   "vault":  { "path": "/vault", "allowedRoots": ["/vault"], "trash": ".trash" },
   "git":    { "enabled": false, "remote": "", "branch": "main",
               "token": "", "authorName": "", "authorEmail": "",
