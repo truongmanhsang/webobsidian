@@ -32,7 +32,36 @@ export async function resolveInVault(relPath: string): Promise<string> {
   if (abs !== root && !abs.startsWith(rootWithSep)) {
     throw Object.assign(new Error('Path escapes vault'), { status: 400 });
   }
+  // Never resolve into the vault's own git metadata: an authenticated write to
+  // e.g. .git/hooks/post-merge would execute on the next git sync.
+  if (path.relative(root, abs).split(path.sep).includes('.git')) {
+    throw Object.assign(new Error('Path not allowed'), { status: 400 });
+  }
+  // Symlink guard: a symlink *inside* the vault could point outside it, which the
+  // string-prefix check above can't catch. Resolve the real path of the deepest
+  // existing ancestor and confirm it still lives under the vault root.
+  await assertRealpathInVault(abs, root);
   return abs;
+}
+
+async function assertRealpathInVault(abs: string, root: string): Promise<void> {
+  const realRoot = await fs.realpath(root).catch(() => root);
+  const realRootSep = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
+  let probe = abs;
+  for (;;) {
+    try {
+      const real = await fs.realpath(probe);
+      if (real !== realRoot && !real.startsWith(realRootSep)) {
+        throw Object.assign(new Error('Path escapes vault'), { status: 400 });
+      }
+      return; // deepest existing ancestor is inside the vault; the rest is new
+    } catch (e: any) {
+      if (e?.status === 400) throw e; // our own escape error — propagate
+      const parent = path.dirname(probe);
+      if (parent === probe) return; // reached fs root without resolving — nothing to verify
+      probe = parent;
+    }
+  }
 }
 
 export function toRel(root: string, abs: string): string {

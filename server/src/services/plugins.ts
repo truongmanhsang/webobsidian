@@ -33,6 +33,19 @@ async function pluginsDir(): Promise<string> {
   return path.join(root, '.obsidian', 'plugins');
 }
 
+/**
+ * A plugin id becomes a path segment under `.obsidian/plugins/`, both when
+ * installing (taken from a *remote* manifest.json) and when serving assets
+ * (taken from the URL). Reject anything that isn't a plain id so a crafted
+ * `../../..` can't read or write outside the plugins directory.
+ */
+function assertSafeId(id: string): string {
+  if (!/^[a-zA-Z0-9._-]+$/.test(id) || id === '.' || id === '..') {
+    throw Object.assign(new Error('Invalid plugin id'), { status: 400 });
+  }
+  return id;
+}
+
 export async function listInstalled(): Promise<InstalledPlugin[]> {
   const dir = await pluginsDir();
   const s = await getSettings();
@@ -68,11 +81,13 @@ export async function getPluginAsset(
   id: string,
   asset: 'main.js' | 'styles.css' | 'manifest.json',
 ): Promise<string> {
+  assertSafeId(id);
   const dir = await pluginsDir();
   return fs.readFile(path.join(dir, id, asset), 'utf8');
 }
 
 export async function setEnabled(id: string, enabled: boolean): Promise<void> {
+  assertSafeId(id);
   await updateSettings((d) => {
     const set = new Set(d.plugins.enabled);
     if (enabled) set.add(id);
@@ -97,7 +112,9 @@ export async function installFromGithub(repo: string): Promise<InstalledPlugin> 
   }
 
   const manifest = JSON.parse(await fetchText(assets['manifest.json'])) as PluginManifest;
-  const id = manifest.id || clean.split('/')[1];
+  // id comes from a REMOTE manifest — validate before it becomes a path segment
+  // (a crafted `../../..` would otherwise write main.js outside the plugins dir).
+  const id = assertSafeId(manifest.id || clean.split('/')[1]);
   const dir = await pluginsDir();
   const target = path.join(dir, id);
   await fs.mkdir(target, { recursive: true });

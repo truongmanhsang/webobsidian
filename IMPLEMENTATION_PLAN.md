@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-12 (Copy/Cut/Paste file & folder trong context menu file tree)
+Cập nhật lần cuối: 2026-06-12 (Security hardening: bắt đổi pass mặc định, redact git PAT, helmet/CSP, rate-limit login, WS auth, plugin id + vault path + symlink guards)
 
 ---
 
@@ -357,6 +357,18 @@ Cập nhật lần cuối: 2026-06-12 (Copy/Cut/Paste file & folder trong contex
       (Cut = `rename` về root, Copy = `api.copy` né trùng tên). Áp cả nhánh "Vault is empty.".
 
 ### Nhật ký tiến độ
+- 2026-06-12 (Security hardening — audit toàn repo): không có secret lộ trong git (history + tracked
+  files sạch; `data/`/`.env`/`.claude/skills/` gitignored). Sửa 9 điểm: **(1)** bắt đổi pass khi còn
+  dùng mặc định `123456` — `/auth/login`+`/me`+`/status` trả `mustChangePassword`, web chặn bằng
+  `ForceChangePassword` (vẫn bind 0.0.0.0). **(2)** redact git PAT (`https://<token>@…`) khỏi mọi
+  error trả client + log (`lib/redact.ts`, dùng trong `errorHandler`, `git.ts` sync/autosync).
+  **(3)** `helmet` + CSP (script-src 'self'+nonce; KHÔNG `upgrade-insecure-requests` để giữ HTTP
+  self-host; nonce cho inline script trang `/share`). **(4)** rate-limit `/auth/login` 10 lần/15
+  phút/IP (`middleware/ratelimit.ts`). **(5/6)** validate plugin `id` (`^[a-zA-Z0-9._-]+$`) ở install
+  (manifest.id remote) + serve asset → chặn path traversal đọc/ghi. **(7)** `/ws` yêu cầu cookie
+  auth ở bước upgrade. **(8)** `resolveInVault` chặn segment `.git` (RCE qua hooks) + realpath guard
+  chống symlink thoát vault. **(9)** đổi `vault.path` qua API phải nằm trong allowedRoots + là thư mục
+  tồn tại. Typecheck + build sạch; smoke-test xác minh tất cả. PRD §Bảo mật cập nhật.
 - 2026-06-12 (Phase 24 — Copy/Cut/Paste file & folder trong context menu file tree): store thêm
   `clipboard {path, mode}` + `setClipboard` (session-local). FileTree: `doClipboard('copy'|'cut')`
   set clipboard + toast; `doPaste` dán vào folder đích — Cut = `api.rename` (move, hỗ trợ folder,

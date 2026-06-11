@@ -79,18 +79,21 @@ export class ApiError extends Error {
 
 export const api = {
   // auth
-  authStatus: () => req<{ passwordSet: boolean }>('/auth/status'),
+  authStatus: () => req<{ passwordSet: boolean; mustChangePassword: boolean }>('/auth/status'),
   setup: (password: string) =>
     req<{ ok: true }>('/auth/setup', { method: 'POST', body: JSON.stringify({ password }) }),
   login: (password: string) =>
-    req<{ ok: true }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+    req<{ ok: true; mustChangePassword: boolean }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
   logout: () => req<{ ok: true }>('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword: string, newPassword: string) =>
     req<{ ok: true }>('/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
-  me: () => req<{ authenticated: boolean }>('/auth/me'),
+  me: () => req<{ authenticated: boolean; mustChangePassword: boolean }>('/auth/me'),
 
   // files
   tree: () => req<TreeNode>('/api/files/'),

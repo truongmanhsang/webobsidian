@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { redactUrlCreds } from '../lib/redact.js';
 
 /** Wrap async route handlers so rejections hit the error middleware. */
 export function asyncHandler<T>(
@@ -12,6 +13,9 @@ export function asyncHandler<T>(
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction): void {
   const status = err?.status ?? 500;
-  if (status >= 500) console.error('[error]', err);
-  res.status(status).json({ error: err?.message ?? 'Internal Server Error' });
+  // Redact any URL-embedded credentials (e.g. a Git PAT baked into an
+  // authenticated remote URL) before this message hits the client OR the logs.
+  const message = redactUrlCreds(err?.message ?? 'Internal Server Error');
+  if (status >= 500) console.error('[error]', message, err?.stack ? `\n${redactUrlCreds(err.stack)}` : '');
+  res.status(status).json({ error: message });
 }

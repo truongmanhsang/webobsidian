@@ -3,6 +3,7 @@ import path from 'node:path';
 import { simpleGit, type SimpleGit, type StatusResult } from 'simple-git';
 import { getSettings } from './settings.js';
 import { getVaultRoot } from './vault.js';
+import { redactUrlCreds } from '../lib/redact.js';
 
 /** GitHub-native sync with Git LFS support (PRD FR-4). */
 
@@ -333,10 +334,10 @@ export function scheduleAutoCommitOnSave(): void {
       // Full sync (pull→merge→push), not a bare push: pushing without first
       // integrating the remote is exactly what left the repo permanently rejected
       // ("fetch first") once another device had pushed in the meantime.
-      if (s.git.remote) await sync().catch((e) => console.warn('[git] auto-sync failed:', e?.message));
+      if (s.git.remote) await sync().catch((e) => console.warn('[git] auto-sync failed:', redactUrlCreds(e?.message)));
       else await commitAll();
     } catch (e: any) {
-      console.warn('[git] auto-commit failed:', e.message);
+      console.warn('[git] auto-commit failed:', redactUrlCreds(e.message));
     }
   }, 5000);
 }
@@ -408,7 +409,8 @@ export async function sync(message?: string): Promise<{ ok: boolean; log: string
   try {
     log.push(await push());
   } catch (e: any) {
-    log.push(`Push failed: ${e.message}`);
+    // Redact: a push failure echoes the authenticated remote URL (PAT embedded).
+    log.push(`Push failed: ${redactUrlCreds(e.message)}`);
     return { ok: false, log };
   }
   return { ok: true, log };

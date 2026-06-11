@@ -101,7 +101,7 @@ sharePageRouter.get(
   <button class="btn" type="submit">Open note</button>
   <div class="public-unlock-error" id="unlock-err"></div>
 </form>
-<script>
+<script nonce="${res.locals.cspNonce}">
 document.getElementById('unlock-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const r = await fetch('/public/shares/${share.id}/unlock', {

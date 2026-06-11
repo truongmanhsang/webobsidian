@@ -277,7 +277,13 @@ cùng một codebase React.
 ---
 
 ## 4. Yêu cầu phi chức năng (NFR)
-- **Bảo mật**: password hash scrypt, JWT secret tự sinh, API key hash khi lưu, path traversal guard, CORS hạn chế, rate limiting.
+- **Bảo mật**: password hash scrypt, JWT secret tự sinh, API key hash khi lưu, path traversal guard
+  (chặn `..`, segment `.git`, symlink thoát vault), CORS hạn chế, rate limiting (cả `/auth/login`:
+  10 lần/15 phút/IP). Bắt buộc đổi mật khẩu mặc định (`123456`) ngay sau lần đăng nhập đầu
+  (`mustChangePassword`). Security headers qua `helmet` + CSP (script-src 'self'+nonce; không ép HTTPS
+  để giữ self-host HTTP). Token git/PAT được redact khỏi mọi thông báo lỗi trả client + log. WebSocket
+  `/ws` yêu cầu phiên đăng nhập hợp lệ. Plugin `id` được validate trước khi thành path segment; đổi
+  `vault.path` qua API bị giới hạn trong `allowedRoots`.
 - **Hiệu năng**: search < 100ms cho vault ~10k notes; lazy load file tree lớn.
 - **Tin cậy**: atomic writes cho settings & notes; backup trước ghi đè; git ops không mất dữ liệu.
 - **Khả chuyển**: chạy được trên Linux/macOS, ARM & x86.

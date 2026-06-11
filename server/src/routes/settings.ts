@@ -22,6 +22,12 @@ settingsRouter.put(
   '/',
   asyncHandler(async (req, res) => {
     const body = req.body ?? {};
+    // A changed vault.path turns the whole files API into read/write over that
+    // tree, so constrain it to the allowed roots (same gate as Browse…) and
+    // require it to be an existing directory before persisting.
+    if (body.vault && typeof body.vault.path === 'string' && body.vault.path) {
+      await assertVaultPathAllowed(body.vault);
+    }
     const updated = await updateSettings((d) => {
       if (body.vault) {
         Object.assign(d.vault, sanitizeVault(body.vault));
@@ -49,6 +55,35 @@ function sanitizeVault(v: any) {
   if (typeof v.attachmentDir === 'string') out.attachmentDir = v.attachmentDir;
   if (Array.isArray(v.allowedRoots)) out.allowedRoots = v.allowedRoots;
   return out;
+}
+
+/** The roots a new vault path may live under — mirrors GET /browse. */
+async function effectiveRoots(newAllowed?: unknown): Promise<string[]> {
+  const s = await getSettings();
+  const fromBody = Array.isArray(newAllowed)
+    ? (newAllowed as unknown[]).filter((r): r is string => typeof r === 'string')
+    : [];
+  const roots = fromBody.length
+    ? fromBody
+    : s.vault.allowedRoots.length
+      ? s.vault.allowedRoots
+      : config.allowedRoots.length
+        ? config.allowedRoots
+        : [os.homedir()];
+  return roots.map((r) => path.resolve(r));
+}
+
+async function assertVaultPathAllowed(v: any): Promise<void> {
+  const target = path.resolve(String(v.path));
+  const roots = await effectiveRoots(v.allowedRoots);
+  const within = roots.some((r) => target === r || target.startsWith(r + path.sep));
+  if (!within) {
+    throw Object.assign(new Error('Vault path is outside the allowed roots'), { status: 403 });
+  }
+  const st = await fs.stat(target).catch(() => null);
+  if (!st || !st.isDirectory()) {
+    throw Object.assign(new Error('Vault path is not an existing directory'), { status: 400 });
+  }
 }
 
 

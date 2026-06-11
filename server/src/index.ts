@@ -1,6 +1,8 @@
-import express from 'express';
+import express, { type Response } from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import helmet from 'helmet';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
@@ -11,6 +13,8 @@ import chokidar from 'chokidar';
 import { config } from './config.js';
 import { loadSettings, getSettings, setPasswordIfInitial } from './bootstrap.js';
 import { errorHandler } from './middleware/error.js';
+import { COOKIE_NAME } from './middleware/auth.js';
+import { verifyToken } from './services/auth.js';
 import { authRouter } from './routes/auth.js';
 import { filesRouter } from './routes/files.js';
 import { searchRouter } from './routes/search.js';
@@ -49,6 +53,42 @@ async function main() {
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '32mb' }));
   app.use(cookieParser());
+
+  // Per-request CSP nonce — used by the SSR share page's inline <script>.
+  app.use((_req, res, next) => {
+    res.locals.cspNonce = randomBytes(16).toString('base64');
+    next();
+  });
+  // Security headers. The CSP intentionally does NOT emit `upgrade-insecure-requests`
+  // (it would break plain-HTTP self-hosting). `script-src` is 'self' + per-request
+  // nonce; `style-src` allows inline styles (React inline styles + the SSR page's
+  // <style>). Note: inline <script> inside ```html render-blocks won't execute under
+  // this policy — acceptable for the marginal XSS hardening it buys.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as Response).locals.cspNonce}'`],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+          fontSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'", 'ws:', 'wss:'],
+          objectSrc: ["'none'"],
+          frameSrc: ["'self'", 'blob:'],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+          upgradeInsecureRequests: null,
+        },
+      },
+      // Allow social crawlers / other sites to load public share og:images.
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+
   if (!config.isProd) {
     app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
   }
@@ -104,8 +144,33 @@ async function main() {
 }
 
 // --- WebSocket: broadcast filesystem & UI-state events to connected clients ----
+// Auth-gated: the WS stream leaks vault structure (paths of created/changed/deleted
+// files), so the upgrade is rejected unless the request carries a valid session.
 function setupWebsocket(server: http.Server) {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    let pathname = '';
+    try {
+      pathname = new URL(req.url ?? '', 'http://localhost').pathname;
+    } catch {
+      pathname = '';
+    }
+    if (pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+    const token = cookieValue(req.headers.cookie, COOKIE_NAME) ?? bearerToken(req.headers.authorization);
+    void (async () => {
+      if (!token || !(await verifyToken(token))) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    })();
+  });
+
   wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ type: 'hello' }));
   });
@@ -115,6 +180,21 @@ function setupWebsocket(server: http.Server) {
       if (client.readyState === 1) client.send(data);
     }
   });
+}
+
+/** Parse a single cookie value out of a raw `Cookie:` header (no cookie-parser on upgrade). */
+function cookieValue(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return undefined;
+}
+
+function bearerToken(header: string | undefined): string | undefined {
+  return header?.startsWith('Bearer ') ? header.slice(7) : undefined;
 }
 
 // --- chokidar watcher: reflect external changes (git pull, direct edits) ---

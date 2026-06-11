@@ -78,6 +78,8 @@ export interface ContextMenuState {
 interface AppState {
   authed: boolean;
   setAuthed: (v: boolean) => void;
+  mustChangePassword: boolean;
+  setMustChangePassword: (v: boolean) => void;
 
   tree: TreeNode | null;
   loadTree: () => Promise<void>;
@@ -273,6 +275,8 @@ export const useStore = create<AppState>()(
     (set, get) => ({
       authed: false,
       setAuthed: (v) => set({ authed: v }),
+      mustChangePassword: false,
+      setMustChangePassword: (v) => set({ mustChangePassword: v }),
 
       tree: null,
       loadTree: async () => {

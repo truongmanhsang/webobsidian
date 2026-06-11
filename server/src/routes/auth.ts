@@ -3,12 +3,14 @@ import { asyncHandler } from '../middleware/error.js';
 import { COOKIE_NAME, requireAuth } from '../middleware/auth.js';
 import {
   isPasswordSet,
+  hasCustomPassword,
   setUserPassword,
   checkPassword,
   changePassword,
   issueToken,
   MIN_PASSWORD_LEN,
 } from '../services/auth.js';
+import { loginRateLimit } from '../middleware/ratelimit.js';
 
 export const authRouter = Router();
 
@@ -33,7 +35,8 @@ function cookieOpts(req: Request) {
 authRouter.get(
   '/status',
   asyncHandler(async (_req, res) => {
-    res.json({ passwordSet: await isPasswordSet() });
+    // mustChangePassword=true ⇒ still on the default 123456; the UI forces a change.
+    res.json({ passwordSet: await isPasswordSet(), mustChangePassword: !(await hasCustomPassword()) });
   }),
 );
 
@@ -80,6 +83,7 @@ authRouter.post(
 
 authRouter.post(
   '/login',
+  loginRateLimit,
   asyncHandler(async (req, res) => {
     const { password } = req.body ?? {};
     if (typeof password !== 'string' || !(await checkPassword(password))) {
@@ -87,7 +91,9 @@ authRouter.post(
       return;
     }
     const token = await issueToken();
-    res.cookie(COOKIE_NAME, token, cookieOpts(req)).json({ ok: true });
+    res
+      .cookie(COOKIE_NAME, token, cookieOpts(req))
+      .json({ ok: true, mustChangePassword: !(await hasCustomPassword()) });
   }),
 );
 
@@ -99,6 +105,6 @@ authRouter.get(
   '/me',
   requireAuth,
   asyncHandler(async (_req, res) => {
-    res.json({ authenticated: true });
+    res.json({ authenticated: true, mustChangePassword: !(await hasCustomPassword()) });
   }),
 );

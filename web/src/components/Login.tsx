@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { useStore } from '../lib/store';
 import Icon from './Icon';
 
 export default function Login({ onAuthed }: { onAuthed: () => void }) {
+  const setMustChangePassword = useStore((s) => s.setMustChangePassword);
   const [needSetup, setNeedSetup] = useState(false);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -22,8 +24,13 @@ export default function Login({ onAuthed }: { onAuthed: () => void }) {
     }
     setBusy(true);
     try {
-      if (needSetup) await api.setup(password);
-      else await api.login(password);
+      if (needSetup) {
+        await api.setup(password);
+        setMustChangePassword(false); // a freshly-set password is already custom
+      } else {
+        const r = await api.login(password);
+        setMustChangePassword(Boolean(r.mustChangePassword));
+      }
       onAuthed();
     } catch (e: any) {
       setErr(e.message ?? 'Failed');
