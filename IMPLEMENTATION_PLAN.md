@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-11 (Git Sync fix — spawn EBADF / fd leak)
+Cập nhật lần cuối: 2026-06-11 (Deploy hardening — .env-driven compose + watcher polling fallback)
 
 ---
 
@@ -83,6 +83,9 @@ Cập nhật lần cuối: 2026-06-11 (Git Sync fix — spawn EBADF / fd leak)
 - [x] M10.1 Multi-stage `Dockerfile` (web build → server runtime, git+git-lfs)
 - [x] M10.2 `docker-compose.yml` (vault + data volumes, env secrets, healthcheck)
 - [x] M10.3 `README.md` quickstart + `docs/AGENT_API.md`
+- [x] M10.4 Deploy hardening cho self-host: compose `.env`-driven (`VAULT_HOST_PATH`,
+  `HTTP_BIND/HTTP_PORT`, `WEBOBSIDIAN_WATCH`) → không clobber khi redeploy; watcher tự
+  fallback polling khi inotify `ENOSPC/EMFILE`; `start_period=90s`; README mục Deploy-to-VPS
 
 ## Phase 11 — QA & DoD
 - [x] M11.1 Smoke test end-to-end (login → edit → search → backlinks → agent API CRUD)
@@ -152,6 +155,10 @@ Cập nhật lần cuối: 2026-06-11 (Git Sync fix — spawn EBADF / fd leak)
 - [x] M16.6 SSR trang `/share/{id}`: server render HTML hoàn chỉnh (Google indexable) + SEO meta
       (title, description, canonical, Open Graph + og:image, Twitter card); locked → form password
       noindex; thay thế trang React /share (web bỏ PublicNote, dev proxy /share về server)
+- [x] M16.7 Share dialog per-note + badge (theo phản hồi, PRD 0.7): menu "Share…" (file tree +
+      menu ⋯ pane, thay "Copy public link") mở popup tạo link/copy URL/toggle bật-tắt/password/xoá;
+      icon globe màu accent cạnh tên note đang share trong file tree; shares cache trong store
+      dùng chung cho dialog + Settings → Sharing + badge
 
 ## Phase 17 — Pane menu (⋯) & Right sidebar tabs (theo phản hồi người dùng, PRD 0.3)
 - [x] M17.1 Menu "More options" (⋯) trên view-header mọi pane: note (Split right/down, Bookmark,
@@ -266,6 +273,16 @@ Cập nhật lần cuối: 2026-06-11 (Git Sync fix — spawn EBADF / fd leak)
       hover (accent + dim phần không liên kết) tới khi di chuột; Esc đóng; wheel/drag hủy fly
 
 ### Nhật ký tiến độ
+- 2026-06-11 (Deploy hardening cho open-source self-host): rà soát các điểm gãy khi deploy lên VPS
+  sạch (gặp thực tế khi deploy lên Synology NAS). (1) `docker-compose.yml` hardcode `./sample-vault`
+  + port → người tự host phải sửa file tracked, và mỗi lần redeploy clobber. Fix: chuyển sang
+  `${VAULT_HOST_PATH:-./sample-vault}` / `${HTTP_BIND}:${HTTP_PORT}` / `${WEBOBSIDIAN_WATCH}`, tham số
+  để ở `.env` (git-ignored) → redeploy không mất cấu hình. (2) Watcher `ENOSPC`: VPS sạch
+  `fs.inotify.max_user_watches=8192` < số file vault lớn → native watch chết. Fix: tách `startWatcher()`,
+  thêm `.on('error')`, đụng `ENOSPC/EMFILE` thì tự `close()` + restart ở chế độ `usePolling`, log hướng
+  dẫn nâng sysctl; env `WEBOBSIDIAN_WATCH=polling` ép polling từ đầu. (3) `.env.example` viết lại theo
+  luồng docker thật. (4) healthcheck `start_period=90s` cho index vault lớn lần đầu. README thêm mục
+  "Deploy to a VPS" + lệnh sysctl. PRD ↑0.6, FR-9 mở rộng. typecheck server pass.
 - 2026-06-11 (Git Sync fix — `spawn EBADF`): bug "Git Sync ko chạy được" → lỗi `spawn EBADF`. Root
   cause KHÔNG ở git: **chokidar v4** trên macOS watch từng file qua kqueue → giữ **1 fd/file**, vault
   ~11k file làm process mở ~11k fd; khi `simple-git` spawn `git`, libuv hết fd dựng pipe stdio →
@@ -651,3 +668,12 @@ Cập nhật lần cuối: 2026-06-11 (Git Sync fix — spawn EBADF / fd leak)
   accent + dim không-liên-kết tới khi di chuột; wheel/drag hủy fly; Esc/clear đóng list. Verify
   CDP vault thật: gõ "docker" 50 kết quả đúng rank, click bay tới node centered scale 2.0, query
   tự xoá, console sạch. Typecheck + build sạch. PRD bump 0.5 (FR-2).
+- 2026-06-11: M16.7 — Share dialog per-note + globe badge (phản hồi: "Copy public link" không cho
+  biết note đã share). Component `ShareDialog.tsx` (modal): chưa share → nút Create public link;
+  đã share → toggle pill bật/tắt, ô URL + Copy, Set/Change password, Delete link. Store thêm
+  `shares` cache + `loadShares()` + `shareDialogPath` (load sau login, refresh sau mỗi thao tác);
+  Settings → Sharing chuyển sang dùng store nên badge đồng bộ mọi nơi. Context menu file tree và
+  menu ⋯ pane đổi item thành "Share…" (icon globe) mở dialog. File tree: note có share enabled hiện
+  icon globe màu accent cạnh tên. Icon `globe` thêm vào bộ Lucide. Verify headless Chrome qua CDP
+  (MCP bị phiên khác giữ): badge hiện đúng note share + màu accent, menu có "Share…", dialog mở đủ
+  controls (URL đúng token, toggle on, Set password…, Delete). Typecheck + build sạch.

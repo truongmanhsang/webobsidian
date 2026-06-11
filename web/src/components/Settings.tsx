@@ -237,10 +237,11 @@ function Shares() {
   const notify = useStore((s) => s.notify);
   const openFile = useStore((s) => s.openFile);
   const setOpen = useStore((s) => s.setSettings);
-  const [shares, setShares] = useState<any[]>([]);
+  // Shared with the store so the file tree's globe badges refresh on changes.
+  const shares = useStore((s) => s.shares);
+  const load = useStore((s) => s.loadShares);
   const [query, setQuery] = useState('');
-  const load = () => api.listShares().then((r) => setShares(r.shares)).catch(() => {});
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const url = (id: string) => `${location.origin}/share/${id}`;
   const copy = (id: string) => {
@@ -276,7 +277,7 @@ function Shares() {
       <h2>Sharing</h2>
       <p style={{ color: 'var(--text-muted)' }}>
         Notes shared via a public link are readable by <b>anyone with the URL</b>, without login.
-        Create a link from a note's context menu ("Copy public link"). Disable keeps the URL for
+        Create a link from a note's context menu ("Share…"). Disable keeps the URL for
         re-enabling later; delete revokes it permanently.
       </p>
       <input

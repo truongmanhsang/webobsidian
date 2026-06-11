@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type TreeNode } from './api';
+import { api, type TreeNode, type ShareRecord } from './api';
 
 /** Per-tab id so we can ignore the echo of our own server-pushed state change. */
 export const CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -139,6 +139,13 @@ interface AppState {
   contextMenu: ContextMenuState | null;
   openContextMenu: (m: ContextMenuState) => void;
   closeContextMenu: () => void;
+
+  /** Public share links (FR-10) — cached so the tree can badge shared notes. */
+  shares: ShareRecord[];
+  loadShares: () => Promise<void>;
+  /** Note path whose Share dialog is open (null = closed). */
+  shareDialogPath: string | null;
+  setShareDialog: (path: string | null) => void;
 
   toast: string;
   notify: (msg: string) => void;
@@ -356,6 +363,18 @@ export const useStore = create<AppState>()(
       contextMenu: null,
       openContextMenu: (m) => set({ contextMenu: m }),
       closeContextMenu: () => set({ contextMenu: null }),
+
+      shares: [],
+      loadShares: async () => {
+        try {
+          const { shares } = await api.listShares();
+          set({ shares });
+        } catch {
+          /* not authed yet */
+        }
+      },
+      shareDialogPath: null,
+      setShareDialog: (path) => set({ shareDialogPath: path }),
 
       toast: '',
       notify: (msg) => {

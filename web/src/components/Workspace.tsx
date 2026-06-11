@@ -98,17 +98,9 @@ export default function Workspace() {
         ...(isMd
           ? [
               {
-                label: 'Copy public link',
-                icon: 'link',
-                onClick: async () => {
-                  try {
-                    const { share } = await api.createShare(path);
-                    await navigator.clipboard?.writeText(`${location.origin}/share/${share.id}`);
-                    notify('Public link copied');
-                  } catch (err: any) {
-                    notify(`Share failed: ${err.message}`);
-                  }
-                },
+                label: 'Share…',
+                icon: 'globe',
+                onClick: () => useStore.getState().setShareDialog(path),
               },
             ]
           : []),

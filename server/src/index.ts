@@ -120,6 +120,13 @@ function setupWebsocket(server: http.Server) {
 // --- chokidar watcher: reflect external changes (git pull, direct edits) ---
 async function setupWatcher() {
   const root = await getVaultRoot();
+  // WEBOBSIDIAN_WATCH: 'auto' (default) = native inotify with automatic polling
+  // fallback when the host watch limit is exceeded; 'polling' = force polling.
+  const forcePolling = (process.env.WEBOBSIDIAN_WATCH ?? 'auto').toLowerCase() === 'polling';
+  startWatcher(root, forcePolling);
+}
+
+function startWatcher(root: string, usePolling: boolean) {
   const watcher = chokidar.watch(root, {
     // Ignore VCS/dep/trash dirs AND `.obsidian` — the desktop Obsidian app
     // rewrites its workspace/state files constantly, which otherwise floods the
@@ -127,7 +134,31 @@ async function setupWatcher() {
     ignored: (p) => /(^|[/\\])(\.git|\.obsidian|node_modules|\.trash)([/\\]|$)/.test(p),
     ignoreInitial: true,
     persistent: true,
+    usePolling,
+    interval: 1000,
+    binaryInterval: 3000,
     awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+  });
+
+  // On a fresh VPS the kernel's `fs.inotify.max_user_watches` is often far below
+  // the file count of a large vault, so native watching fails with ENOSPC/EMFILE.
+  // Self-heal by transparently switching to polling (no inotify), and tell the
+  // operator how to restore native (cheaper) watching.
+  let degraded = false;
+  watcher.on('error', (err) => {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (!usePolling && !degraded && (code === 'ENOSPC' || code === 'EMFILE')) {
+      degraded = true;
+      console.warn(
+        `[watcher] native file watching hit ${code} (host inotify limit too low ` +
+        `for this vault). Falling back to polling. For lower CPU, raise the limit: ` +
+        `sudo sysctl -w fs.inotify.max_user_watches=524288`,
+      );
+      watcher.close().catch(() => {});
+      startWatcher(root, true);
+      return;
+    }
+    console.error('[watcher] error:', err);
   });
 
   const onChange = async (absPath: string, type: string) => {

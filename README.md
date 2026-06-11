@@ -26,15 +26,35 @@ GitHub sync (incl. Git LFS), an API for AI agents, and community-plugin support.
 ## Quick start (Docker)
 
 ```bash
-# 1. Put your vault somewhere and edit docker-compose.yml volume mapping
-#    (defaults to ./sample-vault)
-# 2. Optionally set an initial password
-export WEBOBSIDIAN_PASSWORD="change-me"
-docker compose up --build
+git clone https://github.com/xnohat/webobsidian.git
+cd webobsidian
+cp .env.example .env        # edit VAULT_HOST_PATH, set WEBOBSIDIAN_PASSWORD
+docker compose up -d --build
 # open http://localhost:8787
 ```
 
-On first load you'll set the master password (if not provided via env).
+Out of the box it serves the bundled `./sample-vault`. All deployment settings live
+in **`.env`** (git-ignored) — you never edit the tracked `docker-compose.yml`, so a
+`git pull` / redeploy keeps your config and vault mapping intact. On first load you'll
+set the master password (if not seeded via `WEBOBSIDIAN_PASSWORD`).
+
+### Deploy to a VPS
+
+1. Put your vault on the host — copy a folder, or `git clone` it (Git LFS is supported
+   for attachments). The directory must exist before starting.
+2. In `.env` set `VAULT_HOST_PATH=/abs/path/to/vault` and a strong
+   `WEBOBSIDIAN_PASSWORD`. To run behind a reverse proxy, set `HTTP_BIND=127.0.0.1`.
+3. `docker compose up -d --build`.
+
+**Large vaults & file watching.** A fresh VPS ships a low
+`fs.inotify.max_user_watches` (often 8192), which a big vault exceeds. WebObsidian
+auto-detects this and falls back to **polling** (works anywhere, more CPU). For lower
+CPU, raise the kernel limit instead and keep native watching:
+
+```bash
+sudo sysctl -w fs.inotify.max_user_watches=524288
+echo 'fs.inotify.max_user_watches=524288' | sudo tee -a /etc/sysctl.conf
+```
 
 ## Local development
 
@@ -54,6 +74,18 @@ VAULT_PATH=./sample-vault npm start
 
 ## Configuration (env)
 
+**Docker (`.env`, consumed by `docker-compose.yml`):**
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `VAULT_HOST_PATH` | `./sample-vault` | Host path bind-mounted to `/vault` |
+| `HTTP_BIND` | `0.0.0.0` | Host interface to publish on (`127.0.0.1` = local only) |
+| `HTTP_PORT` | `8787` | Host port mapped to container `8787` |
+| `WEBOBSIDIAN_PASSWORD` | – | Seed the master password on first run |
+| `WEBOBSIDIAN_WATCH` | `auto` | `auto` (native + polling fallback) or `polling` |
+
+**App-level (read by the server, set inside the container by Docker):**
+
 | Var | Default | Description |
 |-----|---------|-------------|
 | `PORT` | `8787` | HTTP port |
@@ -61,6 +93,7 @@ VAULT_PATH=./sample-vault npm start
 | `DATA_DIR` | `./data` | Where `settings.json` + search index live |
 | `ALLOWED_ROOTS` | – | Comma-separated roots the vault picker may browse |
 | `WEBOBSIDIAN_PASSWORD` | – | Seed the master password on first run |
+| `WEBOBSIDIAN_WATCH` | `auto` | File-watch mode: `auto` or `polling` |
 | `NODE_OPTIONS` | `--max-old-space-size=4096` (Docker) | Node heap size — raise for large vaults |
 
 Everything else (git remote/token, API keys, plugins, theme) is configured in the

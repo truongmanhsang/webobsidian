@@ -5,17 +5,22 @@ services:
     container_name: webobsidian
     restart: unless-stopped
     ports:
-      - "8787:8787"
+      # ${HTTP_PORT:-8787} on the host → 8787 in the container.
+      # Set HTTP_BIND=127.0.0.1 in .env to expose only to localhost (reverse proxy).
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-8787}:8787"
     environment:
       # Set an initial password (otherwise set it on first-run in the UI)
       WEBOBSIDIAN_PASSWORD: ${WEBOBSIDIAN_PASSWORD:-}
+      # File-watch mode: auto (native + polling fallback) | polling. See .env.example.
+      WEBOBSIDIAN_WATCH: ${WEBOBSIDIAN_WATCH:-auto}
       VAULT_PATH: /vault
       DATA_DIR: /data
       ALLOWED_ROOTS: /vault
       NODE_ENV: production
     volumes:
-      # Mount your notes vault here
-      - ./sample-vault:/vault
+      # Your vault on the host (VAULT_HOST_PATH in .env) → /vault in the container.
+      # Defaults to the bundled sample vault so `docker compose up` works immediately.
+      - ${VAULT_HOST_PATH:-./sample-vault}:/vault
       # Persisted settings.json + search index
       - webobsidian-data:/data
     healthcheck:
@@ -23,6 +28,8 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      # Allow time for the initial vault index on first boot (large vaults).
+      start_period: 90s
 
 volumes:
   webobsidian-data:

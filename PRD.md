@@ -1,7 +1,14 @@
 # PRD — WebObsidian
 
 > Product Requirements Document
-> Phiên bản: 0.5 · Cập nhật: 2026-06-11 · Trạng thái: Draft
+> Phiên bản: 0.7 · Cập nhật: 2026-06-11 · Trạng thái: Draft
+> Changelog 0.7 (FR-10 UX theo phản hồi): menu "Copy public link" → "Share…" mở **Share dialog**
+> per-note (tạo link, copy URL, toggle bật/tắt, đặt/đổi password, xoá link) ở cả context menu file
+> tree lẫn menu ⋯ của pane; note đang share public có **icon globe** (màu accent) cạnh tên trong
+> file tree; danh sách share cache trong store (đồng bộ giữa dialog, Settings → Sharing và badge).
+> Changelog 0.6 (FR-9 deploy hardening cho open-source self-host): tham số deploy chuyển hết sang `.env`
+> (`VAULT_HOST_PATH`/`HTTP_BIND`/`HTTP_PORT`/`WEBOBSIDIAN_WATCH`) nên `docker-compose.yml` không bị clobber
+> khi redeploy; file watcher tự fallback polling khi đụng inotify limit; healthcheck `start_period=90s`.
 > Changelog 0.5: Graph (FR-2) thêm tìm node theo keywords — ô search nổi trên Graph view, gõ keywords
 > hiện danh sách note/tag khả dĩ (match label/path, tag luôn xếp trước, sau đó prefix > label > path + degree), click
 > (hoặc Enter = kết quả đầu) bay camera (fly animation pan+zoom mượt) tới node và highlight node đó
@@ -165,7 +172,14 @@ webobsidian/
 ### FR-9 · Docker
 - `Dockerfile` multi-stage (build web + server → image gọn).
 - `docker-compose.yml`: mount vault volume, data volume, env cho password/secret.
-- Healthcheck, restart policy.
+- Healthcheck (`start_period` đủ dài cho index vault lớn lần đầu), restart policy.
+- **Self-deploy không sửa file tracked**: mọi tham số deploy đặt qua `.env` (git-ignored) —
+  `VAULT_HOST_PATH` (host vault → `/vault`), `HTTP_BIND`/`HTTP_PORT` (publish), `WEBOBSIDIAN_PASSWORD`,
+  `WEBOBSIDIAN_WATCH`. `docker-compose.yml` chỉ tham chiếu `${VAR:-default}` nên `git pull`/redeploy
+  không clobber cấu hình của người tự host. `cp .env.example .env && docker compose up -d --build`.
+- **File watcher chịu lỗi inotify**: VPS sạch thường có `fs.inotify.max_user_watches` thấp →
+  native watch lỗi `ENOSPC/EMFILE`. Watcher tự degrade sang **polling** (`WEBOBSIDIAN_WATCH=auto`),
+  log hướng dẫn nâng `sysctl` để giữ native (CPU thấp hơn).
 
 ### FR-10 · Deep-link URL & Public share
 - **Deep-link**: URL trình duyệt phản ánh note đang mở — `/note/<vault-relative-path>`
@@ -195,9 +209,14 @@ webobsidian/
     (ký bằng `jwtSecret`, TTL 12h, payload gắn share id) đặt trong httpOnly cookie scope đúng
     `/public/shares/{id}` — ảnh nhúng tự gửi cookie. Đổi/xoá password không vô hiệu cookie đã cấp
     (TTL ngắn chấp nhận được cho v1).
+- **Share dialog per-note**: menu "Share…" (context menu file tree + menu ⋯ của pane, chỉ note `.md`)
+  mở popup cài đặt share của note đó: tạo public link, ô URL + nút Copy, toggle bật/tắt link,
+  đặt/đổi/xoá password, xoá link vĩnh viễn.
+- **Badge nhận biết**: note đang share public (enabled) hiện **icon globe** màu accent cạnh tên
+  trong file tree. Danh sách share cache trong store, load sau login và refresh sau mỗi thao tác
+  (dialog lẫn Settings dùng chung) nên badge luôn đúng.
 - **Quản lý tập trung**: Settings → tab "Sharing" liệt kê toàn bộ note đã share, có ô search
-  lọc theo path, toggle enable/disable nhanh, copy link, xoá. Tạo share từ context menu của
-  note trong file tree ("Copy public link").
+  lọc theo path, toggle enable/disable nhanh, copy link, xoá.
 
 ---
 

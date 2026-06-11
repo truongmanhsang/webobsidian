@@ -31,6 +31,8 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
   const toggleBookmark = useStore((s) => s.toggleBookmark);
   const bookmarks = useStore((s) => s.bookmarks);
   const notify = useStore((s) => s.notify);
+  const setShareDialog = useStore((s) => s.setShareDialog);
+  const shares = useStore((s) => s.shares);
 
   const isFolder = node.type === 'folder';
 
@@ -76,15 +78,6 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     navigator.clipboard?.writeText(node.path).catch(() => {});
     notify('Path copied');
   };
-  const sharePublic = async () => {
-    try {
-      const { share } = await api.createShare(node.path);
-      await navigator.clipboard?.writeText(`${location.origin}/share/${share.id}`);
-      notify('Public link copied');
-    } catch (e: any) {
-      notify(`Share failed: ${e.message}`);
-    }
-  };
 
   const onContext = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -112,7 +105,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
           { label: '', separator: true },
           { label: bookmarks.includes(node.path) ? 'Remove bookmark' : 'Bookmark', onClick: () => toggleBookmark(node.path) },
           ...(/\.(md|markdown)$/i.test(node.path)
-            ? [{ label: 'Copy public link', icon: 'link', onClick: sharePublic }]
+            ? [{ label: 'Share…', icon: 'globe', onClick: () => setShareDialog(node.path) }]
             : []),
           { label: 'Make a copy', onClick: doCopy },
           { label: 'Rename…', onClick: doRename },
@@ -184,6 +177,9 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
         <span className="twisty leaf" />
         {fi && <span className="twisty"><Icon name={fi} size={14} /></span>}
         <span className="name">{node.name.replace(/\.(md|markdown)$/, '')}</span>
+        {shares.some((s) => s.path === node.path && s.enabled) && (
+          <Icon name="globe" size={12} className="share-globe" />
+        )}
         {bookmarks.includes(node.path) && <Icon name="bookmark" size={12} className="bm-star" />}
       </div>
     </div>

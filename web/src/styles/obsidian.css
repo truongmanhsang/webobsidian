@@ -1140,3 +1140,14 @@ button { font-family: inherit; }
   font-size: 12px;
   color: var(--text-faint);
 }
+
+/* ---- Share dialog + shared-note badge (FR-10) ---- */
+.share-globe { color: var(--interactive-accent); margin-left: 4px; flex-shrink: 0; }
+.share-dialog { width: 480px; max-width: calc(100vw - 32px); padding: 18px 20px; }
+.share-dialog-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; color: var(--text-normal); }
+.share-dialog-title { font-weight: 700; font-size: 15px; }
+.share-dialog-path { color: var(--text-muted); font-size: 12px; word-break: break-all; }
+.share-dialog-hint { color: var(--text-muted); font-size: 13px; margin: 6px 0 12px; }
+.share-url { display: flex; gap: 6px; margin: 4px 0 10px; }
+.share-url .text-input { flex: 1; min-width: 0; }
+.share-dialog-foot { display: flex; justify-content: flex-end; margin-top: 12px; }

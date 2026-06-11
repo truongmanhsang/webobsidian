@@ -8,6 +8,7 @@ import RightSidebar from './components/RightSidebar';
 import Workspace from './components/Workspace';
 import CommandPalette from './components/CommandPalette';
 import Settings from './components/Settings';
+import ShareDialog from './components/ShareDialog';
 import ContextMenu from './components/ContextMenu';
 import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
@@ -57,6 +58,7 @@ export default function App() {
       .getSettings()
       .then((s) => setTheme(s?.ui?.theme === 'obsidian-dark' ? 'theme-dark' : 'theme-light'))
       .catch(() => {});
+    useStore.getState().loadShares(); // badge shared notes in the file tree
     loadPlugins().catch(() => {});
     // websocket live updates
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -174,6 +176,7 @@ export default function App() {
       </div>
       <CommandPalette />
       <Settings />
+      <ShareDialog />
       <ContextMenu />
       {toast && <div className="toast">{toast}</div>}
     </div>
