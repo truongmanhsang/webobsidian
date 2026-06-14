@@ -25,8 +25,71 @@ export interface GitStatus {
 async function git(): Promise<SimpleGit> {
   const root = await getVaultRoot();
   await fs.mkdir(root, { recursive: true });
-  return simpleGit({ baseDir: root, trimmed: true });
+  // `timeout.block`: abort a command that produces no output for this long, so a
+  // dead network push/pull can't hang forever and wedge the serial queue below.
+  return simpleGit({ baseDir: root, trimmed: true, timeout: { block: 120_000 } });
 }
+
+// ---------------------------------------------------------------------------
+// Serialized git access + stale-lock self-healing
+//
+// Auto-sync (every 30s), the debounced commit-on-save, and the manual /git/*
+// routes all drive git on the SAME repo. Run two at once and their `git add`/
+// `commit` collide on `.git/index.lock` ("Another git process seems to be
+// running") — and a command killed mid-write leaves that lock behind, which then
+// wedges EVERY later op (the "completely dead" state). Funnelling all mutating
+// ops through one async queue removes the race; clearing a stale lock at the head
+// of each op heals a leftover from a crash or an external Obsidian-git process.
+// ---------------------------------------------------------------------------
+let gitQueue: Promise<unknown> = Promise.resolve();
+
+/** A lock a live git process holds is gone within a second for a notes vault; one
+ *  older than this is orphaned. Generous enough that even an external LFS commit
+ *  in flight is never yanked, small enough that a crash leftover self-heals fast. */
+const STALE_LOCK_MS = 15_000;
+
+async function clearStaleLocks(): Promise<void> {
+  const gitDir = path.join(await getVaultRoot(), '.git');
+  for (const name of ['index.lock', 'HEAD.lock', 'config.lock']) {
+    const lock = path.join(gitDir, name);
+    try {
+      const { mtimeMs } = await fs.stat(lock);
+      const age = Date.now() - mtimeMs;
+      if (age >= STALE_LOCK_MS) {
+        await fs.rm(lock, { force: true });
+        console.warn(`[git] cleared stale ${name} (age ${Math.round(age / 1000)}s)`);
+      }
+    } catch {
+      /* lock absent — nothing to clear */
+    }
+  }
+}
+
+/** Run `fn` with exclusive access to the vault repo, after self-healing any stale
+ *  lock. Ops queue (never overlap); a rejecting op doesn't poison the queue. */
+function withGitLock<T>(fn: () => Promise<T>): Promise<T> {
+  const result = gitQueue.then(async () => {
+    await clearStaleLocks();
+    return fn();
+  });
+  gitQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+// Public, serialized git operations. Each delegates to its private *Impl below;
+// callers that already hold the lock (e.g. syncImpl) call the *Impl directly to
+// avoid re-entering the queue and dead-locking.
+export const status = (): Promise<GitStatus> => withGitLock(statusImpl);
+export const pull = (): Promise<string> => withGitLock(pullImpl);
+export const push = (): Promise<string> => withGitLock(pushImpl);
+export const commitAll = (message?: string): Promise<string> => withGitLock(() => commitAllImpl(message));
+export const init = (): Promise<void> => withGitLock(initImpl);
+export const clone = (): Promise<void> => withGitLock(cloneImpl);
+export const sync = (message?: string): Promise<{ ok: boolean; log: string[] }> =>
+  withGitLock(() => syncImpl(message));
 
 /** Compose an authenticated remote URL from settings (PAT embedded). */
 async function authedRemote(): Promise<string> {
@@ -105,7 +168,7 @@ export async function ensureLfsAttributes(): Promise<void> {
   }
 }
 
-export async function init(): Promise<void> {
+async function initImpl(): Promise<void> {
   const g = await git();
   const s = await getSettings();
   if (!(await isRepo(g))) {
@@ -126,7 +189,7 @@ export async function init(): Promise<void> {
 }
 
 /** Clone the configured remote into the (empty) vault dir. */
-export async function clone(): Promise<void> {
+async function cloneImpl(): Promise<void> {
   const s = await getSettings();
   const remote = await authedRemote();
   if (!remote) throw new Error('No remote configured');
@@ -142,7 +205,7 @@ export async function clone(): Promise<void> {
   if (await lfsAvailable()) await gv.raw(['lfs', 'pull']).catch(() => {});
 }
 
-export async function status(): Promise<GitStatus> {
+async function statusImpl(): Promise<GitStatus> {
   const s = await getSettings();
   const g = await git();
   const repo = await isRepo(g);
@@ -214,7 +277,7 @@ export async function showFile(hash: string, filePath: string): Promise<string> 
   return g.show([`${hash}:${filePath}`]);
 }
 
-export async function pull(): Promise<string> {
+async function pullImpl(): Promise<string> {
   const g = await git();
   await ensureLfsAttributes();
   const s = await getSettings();
@@ -297,7 +360,7 @@ export function describeChanges(st: StatusResult): { subject: string; body: stri
   return { subject, body };
 }
 
-export async function commitAll(message?: string): Promise<string> {
+async function commitAllImpl(message?: string): Promise<string> {
   const g = await git();
   await configureIdentity(g);
   await ensureLfsAttributes();
@@ -314,7 +377,7 @@ export async function commitAll(message?: string): Promise<string> {
   return `Committed ${res.commit || ''} (${res.summary.changes} files): ${finalSubject}`;
 }
 
-export async function push(): Promise<string> {
+async function pushImpl(): Promise<string> {
   const g = await git();
   const s = await getSettings();
   const remote = await authedRemote();
@@ -381,18 +444,20 @@ async function recoverMerge(g: SimpleGit): Promise<void> {
   }
 }
 
-/** Convenience: stage+commit+pull+push in one go. Reports conflicts. */
-export async function sync(message?: string): Promise<{ ok: boolean; log: string[] }> {
+/** Convenience: stage+commit+pull+push in one go. Reports conflicts. Runs entirely
+ *  inside the git queue (via the exported `sync` wrapper), so it calls the unlocked
+ *  *Impl helpers directly — re-entering withGitLock here would dead-lock. */
+async function syncImpl(message?: string): Promise<{ ok: boolean; log: string[] }> {
   const log: string[] = [];
   const g = await git();
   if (!(await isRepo(g))) {
-    await init();
+    await initImpl();
     log.push('Initialized repository');
   }
   await recoverMerge(g); // unwedge a prior stuck merge before doing anything
-  log.push(await commitAll(message || ''));
+  log.push(await commitAllImpl(message || ''));
   try {
-    log.push(await pull());
+    log.push(await pullImpl());
   } catch (e: any) {
     // Pull hit a merge conflict. Auto-resolve generated-file noise and finish the
     // merge; only bail (cleanly, not wedged) if real note conflicts remain.
@@ -407,7 +472,7 @@ export async function sync(message?: string): Promise<{ ok: boolean; log: string
     }
   }
   try {
-    log.push(await push());
+    log.push(await pushImpl());
   } catch (e: any) {
     // Redact: a push failure echoes the authenticated remote URL (PAT embedded).
     log.push(`Push failed: ${redactUrlCreds(e.message)}`);

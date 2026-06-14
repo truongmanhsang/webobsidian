@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-15 (Phase 29 — Sort by modified/created time nhanh nhờ statCache trong RAM [fill 1 lần + watcher invalidate], dropdown Files có đủ 6 kiểu sort; typecheck + build sạch)
+Cập nhật lần cuối: 2026-06-15 (Git Sync fix — `index.lock` wedge: serialize mọi git op qua 1 async queue + tự xoá stale lock; gỡ kẹt prod + deploy)
 
 ---
 
@@ -716,6 +716,20 @@ Cập nhật lần cuối: 2026-06-15 (Phase 29 — Sort by modified/created tim
   dẫn nâng sysctl; env `WEBOBSIDIAN_WATCH=polling` ép polling từ đầu. (3) `.env.example` viết lại theo
   luồng docker thật. (4) healthcheck `start_period=90s` cho index vault lớn lần đầu. README thêm mục
   "Deploy to a VPS" + lệnh sysctl. PRD ↑0.6, FR-9 mở rộng. typecheck server pass.
+- 2026-06-15 (Git Sync fix — `index.lock` wedge / "phế hoàn toàn"): bug Git Sync chết hẳn → log lặp
+  `fatal: Unable to create '/vault/.git/index.lock': File exists`. Root cause: **3 nguồn chạy git
+  đồng thời trên CÙNG repo, không phối hợp**: autosync tick (30s), debounced commit-on-save (5s sau
+  khi lưu), và route `/api/git/*` thủ công. Mỗi `git()` tạo **instance simple-git mới** nên task-queue
+  per-instance không serialize chéo → 2 `git add .` đụng nhau trên `.git/index.lock`; 1 lệnh bị kill/
+  crash giữa chừng để lại **stale lock** → mọi op sau đó chết vĩnh viễn. Fix (server/src/services/git.ts):
+  (1) **`withGitLock`** — 1 async queue toàn cục, mọi op ghi (status/pull/push/commitAll/init/clone/sync)
+  đi qua, không bao giờ overlap; op lỗi không "đầu độc" queue. Tách hàm public (wrap khoá) khỏi `*Impl`
+  (chạy trong khoá, gọi nhau trực tiếp để khỏi deadlock). (2) **`clearStaleLocks`** ở đầu mỗi op — xoá
+  `index.lock`/`HEAD.lock`/`config.lock` nếu mtime cũ ≥15s (đủ rộng để không giật lock của Obsidian-git
+  ngoài đang chạy, đủ nhanh để tự lành sau crash). (3) **`timeout.block: 120s`** cho simple-git để op
+  mạng chết không treo queue mãi. Prod (Synology): tìm thấy `index.lock` 0 byte, mtime cũ ~10h →
+  xoá → `git status` chạy lại → `/api/git/sync` = `{ok:true, [Committed, Pulled, Pushed]}`. Deploy bản
+  fix để không tái phát. Typecheck 2 workspace sạch.
 - 2026-06-11 (Git Sync fix — `spawn EBADF`): bug "Git Sync ko chạy được" → lỗi `spawn EBADF`. Root
   cause KHÔNG ở git: **chokidar v4** trên macOS watch từng file qua kqueue → giữ **1 fd/file**, vault
   ~11k file làm process mở ~11k fd; khi `simple-git` spawn `git`, libuv hết fd dựng pipe stdio →
