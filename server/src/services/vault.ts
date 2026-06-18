@@ -169,6 +169,33 @@ export async function createFolder(rel: string): Promise<void> {
   await fs.mkdir(abs, { recursive: true });
 }
 
+/**
+ * Resolve a directory path against the folders that already exist, matching each
+ * segment case-insensitively. Prevents creating a case-duplicate folder (e.g. a
+ * new `attachments` next to an existing `Attachments`) on case-sensitive
+ * filesystems. Segments with no existing match are kept verbatim.
+ */
+export async function resolveDirCaseInsensitive(rel: string): Promise<string> {
+  const root = await getVaultRoot();
+  const segs = rel.split('/').filter(Boolean);
+  const out: string[] = [];
+  let curAbs = root;
+  for (const seg of segs) {
+    let actual = seg;
+    try {
+      const entries = await fs.readdir(curAbs, { withFileTypes: true });
+      const exact = entries.find((e) => e.isDirectory() && e.name === seg);
+      const ci = exact ?? entries.find((e) => e.isDirectory() && e.name.toLowerCase() === seg.toLowerCase());
+      if (ci) actual = ci.name;
+    } catch {
+      /* directory doesn't exist yet — keep the requested casing */
+    }
+    out.push(actual);
+    curAbs = path.join(curAbs, actual);
+  }
+  return out.join('/');
+}
+
 export async function exists(rel: string): Promise<boolean> {
   try {
     await fs.access(await resolveInVault(rel));

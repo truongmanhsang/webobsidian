@@ -250,13 +250,23 @@ button { font-family: inherit; }
 /* ---------- App shell ---------- */
 .app {
   display: grid;
-  grid-template-columns: var(--ribbon-width) auto 1fr auto;
+  grid-template-columns: var(--ribbon-width) var(--sidebar-width) minmax(0, 1fr) var(--right-width);
   grid-template-rows: 1fr;
   height: 100%;
   background: var(--bg-secondary);
 }
 .app.left-closed { --sidebar-width: 0px; }
 .app.right-closed { --right-width: 0px; }
+/* Pin each shell column. The columns are sized by the width vars (not `auto`), so a
+   collapsed sidebar's track is 0 and the editor (col 3, 1fr) always fills the rest —
+   unmounting a sidebar no longer reflows the editor into the wrong track. */
+.app:not(.mobile) > .ribbon { grid-column: 1; }
+.app:not(.mobile) > .sidebar { grid-column: 2; }
+.app:not(.mobile) > .workspace { grid-column: 3; }
+.app:not(.mobile) > .right-sidebar { grid-column: 4; }
+/* No element-width transition while dragging the splitter (keeps the drag 1:1). */
+body.wo-col-resizing { cursor: col-resize; user-select: none; }
+body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition: none; }
 
 /* Ribbon */
 .ribbon {
@@ -276,10 +286,21 @@ button { font-family: inherit; }
 /* Sidebars */
 .sidebar, .right-sidebar {
   background: var(--bg-secondary); display: flex; flex-direction: column; overflow: hidden;
-  transition: width var(--transition);
+  transition: width var(--transition); position: relative;
 }
 .sidebar { width: var(--sidebar-width); border-right: 1px solid var(--bg-modifier-border); }
 .right-sidebar { width: var(--right-width); border-left: 1px solid var(--bg-modifier-border); }
+
+/* Draggable splitter on the sidebar's inner edge (resize panel width). */
+.sidebar-resizer {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 6px;
+  cursor: col-resize; z-index: 15; touch-action: none;
+}
+.sidebar-resizer::after {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 2px;
+  background: var(--interactive-accent, #7b6cff); opacity: 0; transition: opacity var(--transition);
+}
+.sidebar-resizer:hover::after, .sidebar-resizer.active::after { opacity: 0.6; }
 
 .nav-header {
   display: flex; align-items: center; flex-wrap: wrap; gap: 1px; padding: 6px 8px;
@@ -1519,6 +1540,25 @@ button { font-family: inherit; }
   pointer-events: none; z-index: 8;
 }
 
+/* Static canvas render for the public share page (server-rendered snapshot) */
+.public-page.public-canvas { padding: 0; }
+.public-canvas-title { font-size: 20px; font-weight: 700; padding: 16px 20px 8px; color: var(--text-normal); }
+.canvas-static-scroll { flex: 1; overflow: auto; background: var(--background-primary);
+  background-image: radial-gradient(var(--background-modifier-border) 1px, transparent 1px);
+  background-size: 24px 24px; }
+.canvas-static { position: relative; }
+.canvas-static .canvas-node { cursor: default; }
+.canvas-static .canvas-text-body, .canvas-static .canvas-file-body { overflow: hidden; }
+.canvas-static-empty { padding: 40px; text-align: center; color: var(--text-muted); }
+
+/* Alignment guide lines while dragging nodes (Obsidian's canvas-snaps) */
+.canvas-snaps { pointer-events: none; opacity: 0.7; z-index: 9; }
+.canvas-snap-guide line { stroke: var(--interactive-accent, #7b6cff); }
+.canvas-snap-guide circle { fill: var(--interactive-accent, #7b6cff); }
+
+/* Thin vertical divider inside the selection menu (before text-align buttons) */
+.canvas-menu-vsep { width: 1px; align-self: stretch; margin: 3px 3px; background: var(--background-modifier-border); }
+
 /* Floating control + context toolbars */
 .canvas-toolbar, .canvas-ctx {
   position: absolute; display: flex; align-items: center; gap: 2px;
@@ -1613,7 +1653,7 @@ button { font-family: inherit; }
 
 /* Text-card formatting menu (right-click while editing) */
 .canvas-textmenu {
-  position: absolute; z-index: 31; min-width: 170px;
+  position: fixed; z-index: 31; min-width: 170px;
   background: var(--background-primary); border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m); box-shadow: 0 4px 16px rgba(0,0,0,.3); padding: 4px;
 }
@@ -1627,10 +1667,13 @@ button { font-family: inherit; }
 .canvas-textmenu-sep { height: 1px; margin: 4px 6px; background: var(--background-modifier-border); }
 .canvas-textmenu-parent { position: relative; }
 .canvas-textmenu-sub { position: absolute; left: 100%; top: -4px; margin-left: 2px; min-width: 150px; }
+/* "Add link" dropdown anchors to the textarea via clientX/Y → must be viewport-fixed
+   (overrides the bottom-center transform it would otherwise inherit from .canvas-notepicker). */
+.canvas-linkpicker { position: fixed; bottom: auto; transform: none; }
 
 /* Drop-edge-on-empty menu */
 .canvas-dropmenu {
-  position: absolute; z-index: 30; min-width: 180px;
+  position: fixed; z-index: 30; min-width: 180px;
   background: var(--background-primary); border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m); box-shadow: 0 4px 16px rgba(0,0,0,.3); padding: 4px;
 }

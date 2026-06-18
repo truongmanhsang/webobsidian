@@ -64,7 +64,7 @@ export default function ShareDialog() {
         <div className="share-dialog-head">
           <Icon name="globe" size={18} />
           <div>
-            <div className="share-dialog-title">Share note</div>
+            <div className="share-dialog-title">{/\.canvas$/i.test(path) ? 'Share canvas' : 'Share note'}</div>
             <div className="share-dialog-path">{path}</div>
           </div>
         </div>

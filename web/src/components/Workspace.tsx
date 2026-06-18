@@ -79,6 +79,7 @@ export default function Workspace() {
   const canGoForward = histIndex < historyLen - 1;
 
   const isMd = activePath ? /\.(md|markdown)$/i.test(activePath) : false;
+  const isShareable = activePath ? /\.(md|markdown|canvas)$/i.test(activePath) : false;
   const canSplit = activePath ? /\.(md|markdown|txt|json|csv|canvas|css|js|ya?ml)$/i.test(activePath) : false;
 
   // Obsidian's "Add file property": focus a new property-key field in the
@@ -220,7 +221,7 @@ export default function Workspace() {
             if (isMobile) setMobileDrawer('left');
           },
         },
-        ...(isMd ? [{ label: 'Share…', icon: 'globe', onClick: () => setShareDialog(path) }] : []),
+        ...(isShareable ? [{ label: 'Share…', icon: 'globe', onClick: () => setShareDialog(path) }] : []),
         sep,
         ...tabItems,
         sep,

@@ -20,6 +20,10 @@ interface NodeBase {
 export interface TextNode extends NodeBase {
   type: 'text';
   text: string;
+  /** WebObsidian extension (not in the JSON Canvas spec): horizontal text
+   *  alignment for the card. Round-trips through our serializer; the real
+   *  Obsidian app ignores/strips it. Absent = left. */
+  textAlign?: 'left' | 'center' | 'right';
 }
 export interface FileNode extends NodeBase {
   type: 'file';
@@ -226,6 +230,72 @@ function bezierArcMidpoint(
     }
   }
   return bezierPoint(p0, p1, p2, p3, 0.5);
+}
+
+// ---- Alignment snapping (ported from Obsidian Canvas: getSnapping/O3/P3) ----
+// While dragging nodes, Obsidian snaps the moving rects' edges & centers to the
+// edges & centers of the other (static) nodes, and draws guide lines through the
+// matched points. `objectSnapDistance` is 15px at scale 1 (caller scales it).
+
+type Pt = { x: number; y: number };
+
+/** A node's snap points: its 4 corners + center (Obsidian's P3). */
+function snapPoints(r: Rect): Pt[] {
+  const { x, y, width: w, height: h } = r;
+  return [
+    { x, y }, { x: x + w, y }, { x, y: y + h }, { x: x + w, y: y + h },
+    { x: x + w / 2, y: y + h / 2 },
+  ];
+}
+
+/** A drawn alignment guide: a line at `coord` on one axis, spanning [min,max]
+ *  on the other axis (over the matched points). */
+export interface SnapGuide {
+  coord: number; // x for a vertical guide, y for a horizontal one
+  min: number;
+  max: number;
+}
+export interface SnapResult {
+  dx: number;
+  dy: number;
+  x: SnapGuide | null; // vertical guide (an x-axis alignment)
+  y: SnapGuide | null; // horizontal guide (a y-axis alignment)
+}
+
+const EMPTY_SNAP: SnapResult = { dx: 0, dy: 0, x: null, y: null };
+
+/** Best snap along one axis: the smallest shift (≤ dist) that lines a moving
+ *  point up with a static point. Returns the shift + the guide-line extent. */
+function axisSnap(src: Pt[], dst: Pt[], dist: number, axis: 'x' | 'y'): { delta: number; guide: SnapGuide } | null {
+  let bestDelta = 0, bestAbs = Infinity, bestCoord = 0, found = false;
+  for (const s of src) {
+    for (const d of dst) {
+      const diff = d[axis] - s[axis];
+      const a = Math.abs(diff);
+      if (a <= dist && a < bestAbs) { bestAbs = a; bestDelta = diff; bestCoord = d[axis]; found = true; }
+    }
+  }
+  if (!found) return null;
+  const other: 'x' | 'y' = axis === 'x' ? 'y' : 'x';
+  let min = Infinity, max = -Infinity;
+  const near = (v: number) => Math.abs(v - bestCoord) < 0.5;
+  for (const d of dst) if (near(d[axis])) { min = Math.min(min, d[other]); max = Math.max(max, d[other]); }
+  for (const s of src) if (near(s[axis] + bestDelta)) { min = Math.min(min, s[other]); max = Math.max(max, s[other]); }
+  return { delta: bestDelta, guide: { coord: bestCoord, min, max } };
+}
+
+/**
+ * Compute the alignment-snap shift for `moving` rects against `statics` rects.
+ * `dist` is the snap threshold in canvas units (Obsidian: ceil(15 / scale)).
+ * Returns the per-axis delta to add to the drag + the guide lines to draw.
+ */
+export function snapMove(moving: Rect[], statics: Rect[], dist: number): SnapResult {
+  if (!moving.length || !statics.length || dist <= 0) return EMPTY_SNAP;
+  const src = moving.flatMap(snapPoints);
+  const dst = statics.flatMap(snapPoints);
+  const sx = axisSnap(src, dst, dist, 'x');
+  const sy = axisSnap(src, dst, dist, 'y');
+  return { dx: sx?.delta ?? 0, dy: sy?.delta ?? 0, x: sx?.guide ?? null, y: sy?.guide ?? null };
 }
 
 /** Which side of a node a point (canvas coords) is nearest to. */

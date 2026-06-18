@@ -102,7 +102,10 @@ filesRouter.post(
       res.status(400).json({ error: 'file required' });
       return;
     }
-    const rel = path.posix.join(dir, file.originalname);
+    // Reuse an existing folder that differs only in case (e.g. an Obsidian vault's
+    // "Attachments") instead of creating a duplicate "attachments". See vault.ts.
+    const resolvedDir = dir ? await vault.resolveDirCaseInsensitive(dir) : '';
+    const rel = path.posix.join(resolvedDir, file.originalname);
     await vault.writeFileBuffer(rel, file.buffer);
     res.json({ ok: true, path: rel, size: file.size });
   }),

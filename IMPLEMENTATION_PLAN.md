@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-15 (Git Sync fix — `index.lock` wedge: serialize mọi git op qua 1 async queue + tự xoá stale lock; gỡ kẹt prod + deploy)
+Cập nhật lần cuối: 2026-06-18 (Phase 30 — Canvas: marquee drag-select + alignment snap-guides + format hotkeys + text-align; Canvas public share (FR-10); + 5 fix UX: arrowhead, right-click menu pos, collapse layout, sidebar resize, bỏ nút Refresh, gộp Attachments trùng case)
 
 ---
 
@@ -376,6 +376,17 @@ Cập nhật lần cuối: 2026-06-15 (Git Sync fix — `index.lock` wedge: seri
       `Workspace.tsx` (render CanvasView khi path `.canvas`, không phải folder/graph). CSS `.canvas-*`.
 - [x] M25.6 Tạo canvas mới: store `newCanvas(dir)` (Untitled.canvas né trùng, body `{"nodes":[],"edges":[]}`);
       "New canvas" vào context menu FileTree (file/folder/root) + command palette. Typecheck web sạch.
+- [x] M25.7 **Marquee drag-select + alignment snap (parity Obsidian, reverse-engineer asar):** đổi mô hình
+      con trỏ — **kéo trái trên nền = marquee chọn** (Shift = cộng dồn), pan = Space/giữa/phải-kéo, touch 1-ngón
+      vẫn pan. Kéo node: snap cạnh/tâm vào các node khác (`snapMove` trong canvas.ts, port `getSnapping/O3/P3`,
+      điểm snap = 4 góc + tâm, dist = `ceil(15/scale)`), vẽ **guide line** (`.canvas-snaps`); Alt (⌃ trên mac) tắt
+      snap; Shift khi kéo = khoá trục. Verify CDP: marquee chọn 5 node, guide hiện khi căn rồi mất khi thả.
+- [x] M25.8 **Phím tắt format trong text card** (mirror `obsidianKeymap`): ⌘B/I/K(add link)/L(task)/`⌘/`(comment)
+      trên textarea; `toggleWrap` bật/tắt marker. **Text alignment**: `TextNode.textAlign` (left/center/right) —
+      nút trong selection menu (khi chọn text node) + submenu "Align" trong menu chuột phải; áp CSS cho cả textarea
+      lẫn body render. (Mở rộng ngoài JSON Canvas spec — Obsidian thật bỏ qua field này.)
+- [x] M25.9 **Fix UX theo phản hồi:** (1) mũi tên edge to hơn (marker 14×14, refX 11). (2) menu chuột phải card
+      mở **đúng tại con trỏ** + `position:fixed` + đo kích thước rồi dịch vào trong màn hình (không tràn).
 
 ## Phase 26 — Ảnh: resize + zoom lightbox (FR-2, PRD 1.2, theo yêu cầu người dùng)
 - [x] M26.1 `web/src/lib/imageLightbox.ts`: lightbox toàn màn hình singleton (gắn `document.body`).
@@ -392,6 +403,20 @@ Cập nhật lần cuối: 2026-06-15 (Git Sync fix — `index.lock` wedge: seri
       (`.cm-image-resize`) + `.image-lightbox*` + cursor `zoom-in`. Typecheck sạch.
 
 ### Nhật ký tiến độ
+- 2026-06-18 (Phase 30 — Canvas nâng cấp tương tác + Canvas public share + chùm fix UX theo phản hồi liên tục):
+  **Canvas (M25.7–25.9):** marquee kéo-chọn nhiều node + đường gióng (alignment snap-guides) port từ
+  `getSnapping/O3/P3` của Obsidian asar (snap 4 góc + tâm, dist `ceil(15/scale)`, Alt tắt snap, Shift khoá trục);
+  phím tắt format (⌘B/I/K/L/`⌘/`, `toggleWrap`) + căn lề text (`TextNode.textAlign`, nút selection-menu + submenu).
+  **Canvas public share (FR-10 mở rộng):** `server/src/services/rendercanvas.ts` render `.canvas` ra HTML tĩnh
+  (node tuyệt đối + edges SVG, text/embed qua `renderNoteHtml`, allowlist ảnh qua `canvasEmbedTargets`); `sharepage.ts`
+  nhánh canvas (layout `bare`, og:meta), `shares.ts` cho phép `.canvas`; client mở "Share…" cho canvas (Workspace +
+  FileTree). Verify CDP end-to-end: tạo share → `/share/:id` HTTP 200 render đủ node/edge/arrow + og:title.
+  **Fix UX:** (a) mũi tên edge to hơn; (b) menu chuột phải card mở tại con trỏ + clamp trong màn hình (fixed + đo);
+  (c) **thu panel trái không còn chừa khoảng trống phải** — `.app` grid đổi sang cột theo biến `--sidebar-width/--right-width`
+  + pin `grid-column` từng cột (col editor luôn `1fr`); (d) **kéo resize sidebar trái** (`.sidebar-resizer`, clamp 180–560px,
+  lưu `localStorage`); (e) bỏ nút **Refresh** thừa ở header Files (đã có Sync dưới); (f) **fix 2 thư mục Attachments/attachments**
+  — upload resolve thư mục **case-insensitive** (`vault.resolveDirCaseInsensitive`) nên dùng lại folder sẵn có thay vì tạo trùng.
+  Typecheck + build (server + web) sạch.
 - 2026-06-15 (Phase 29 — Sort by modified/created time, nhanh nhờ stat cache): thêm 4 lựa chọn sort theo
   thời gian (Modified/Created · new→old / old→new) vào dropdown header Files. **Nhanh**: server giữ
   `statCache` (Map path→{mtime,ctime}) trong RAM — `listTree()` fill 1 lần (stat song song theo từng thư mục),

@@ -212,7 +212,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
           { label: 'Open to the right', onClick: () => openToSide(node.path) },
           { label: '', separator: true },
           { label: bookmarks.includes(node.path) ? 'Remove bookmark' : 'Bookmark', onClick: () => toggleBookmark(node.path) },
-          ...(/\.(md|markdown)$/i.test(node.path)
+          ...(/\.(md|markdown|canvas)$/i.test(node.path)
             ? [{ label: 'Share…', icon: 'globe', onClick: () => setShareDialog(node.path) }]
             : []),
           { label: 'Make a copy', onClick: doCopy },

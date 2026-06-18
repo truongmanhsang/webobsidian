@@ -12,8 +12,11 @@ import {
   listShares, createShare, setShareEnabled, setSharePassword, deleteShare, getActiveShare,
   type ShareRecord,
 } from '../services/shares.js';
+import { canvasEmbedTargets } from '../services/rendercanvas.js';
 
 const isMd = (p: string) => /\.(md|markdown)$/i.test(p);
+const isCanvas = (p: string) => /\.canvas$/i.test(p);
+const isShareable = (p: string) => isMd(p) || isCanvas(p);
 
 const MIME: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -43,8 +46,8 @@ sharesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const rel = String(req.body?.path ?? '');
-    if (!rel || !isMd(rel)) {
-      res.status(400).json({ error: 'path to a .md note required' });
+    if (!rel || !isShareable(rel)) {
+      res.status(400).json({ error: 'path to a .md or .canvas note required' });
       return;
     }
     if (!(await vault.exists(rel))) {
@@ -185,7 +188,7 @@ publicSharesRouter.get(
       res.status(401).json({ error: 'password required', passwordRequired: true });
       return;
     }
-    const title = (share.path.split('/').pop() ?? share.path).replace(/\.(md|markdown)$/i, '');
+    const title = (share.path.split('/').pop() ?? share.path).replace(/\.(md|markdown|canvas)$/i, '');
     // NOTE: only title + content — the vault path/structure is not exposed.
     res.json({ title, content: await vault.readFileText(share.path) });
   }),
@@ -209,10 +212,11 @@ publicSharesRouter.get(
       res.status(404).json({ error: 'not found' });
       return;
     }
-    // Allowlist check: the resolved file must be one the shared note embeds.
+    // Allowlist check: the resolved file must be one the shared note/canvas embeds.
     const content = await vault.readFileText(share.path);
+    const targets = isCanvas(share.path) ? await canvasEmbedTargets(content) : embedTargets(content);
     const allowed = new Set<string>();
-    for (const t of embedTargets(content)) {
+    for (const t of targets) {
       const r = await resolveVaultPath(t);
       if (r) allowed.add(r);
     }

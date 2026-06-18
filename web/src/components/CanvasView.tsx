@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useStore, type ContextMenuItem } from '../lib/store';
 import { api, type TreeNode } from '../lib/api';
 import { useIsMobile } from '../lib/useIsMobile';
@@ -14,19 +14,28 @@ import {
   autoSides,
   edgePath,
   nearestSide,
+  snapMove,
   type CanvasData,
   type CanvasNode,
   type CanvasEdge,
   type CanvasSide,
   type TextNode,
+  type SnapGuide,
+  type Rect,
 } from '../lib/canvas';
 
 type Sel = { nodes: Set<string>; edges: Set<string> };
 const EMPTY_SEL: Sel = { nodes: new Set(), edges: new Set() };
+type TextAlign = 'left' | 'center' | 'right';
 
 const SIDES: CanvasSide[] = ['top', 'right', 'bottom', 'left'];
 const IMG_RE = /\.(png|jpe?g|gif|svg|webp|bmp|ico)$/i;
 const MD_RE = /\.(md|markdown)$/i;
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// Obsidian's object-snap distance is 15px at 100%; it grows as you zoom out.
+const SNAP_BASE = 15;
+/** Snapping is on by default; holding Alt (Ctrl on macOS) frees the drag. */
+const snapEnabled = (e: { altKey: boolean; ctrlKey: boolean }) => (IS_MAC ? !e.ctrlKey : !e.altKey);
 
 type Drag =
   | { mode: 'pan'; sx: number; sy: number; tx: number; ty: number; moved: boolean }
@@ -98,6 +107,8 @@ export default function CanvasView() {
   const [editingEdge, setEditingEdge] = useState<string | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Alignment guide lines shown while dragging nodes (Obsidian's canvas-snaps).
+  const [snap, setSnap] = useState<{ x: SnapGuide | null; y: SnapGuide | null } | null>(null);
   const [connectTo, setConnectTo] = useState<{ x: number; y: number; node: string | null; side?: CanvasSide } | null>(null);
   const [connecting, setConnecting] = useState(false); // dragging a connection → show all node anchors
   const [notePicker, setNotePicker] = useState(false);
@@ -421,6 +432,24 @@ export default function CanvasView() {
     setShowColors(false);
   };
 
+  // Set the text alignment of the selected text card(s). While editing, keep the
+  // textarea's current (uncommitted) value so the commit doesn't revert typing.
+  const setTextAlign = (align: TextAlign) => {
+    const editId = editingNodeRef.current;
+    const curText = editId ? editTaRef.current?.value : undefined;
+    const targets = new Set<string>(editId ? [editId] : selRef.current.nodes);
+    if (!targets.size) return;
+    commit({
+      ...dataRef.current,
+      nodes: dataRef.current.nodes.map((n) => {
+        if (n.type !== 'text' || !targets.has(n.id)) return n;
+        const next: TextNode = { ...n, textAlign: align };
+        if (n.id === editId && curText != null) next.text = curText;
+        return next;
+      }),
+    });
+  };
+
   // Duplicate the selected nodes (+ edges fully within the selection) with an offset.
   const duplicateSelection = () => {
     const d = dataRef.current;
@@ -555,6 +584,43 @@ export default function CanvasView() {
     }
   };
 
+  // Toggle a symmetric inline marker (bold/italic/…) around the selection:
+  // wraps if absent, unwraps if the markers are already inside or just outside it.
+  const toggleWrap = (mark: string) => {
+    const ta = editTaRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+    const sel = v.slice(s, e);
+    const m = mark.length;
+    if (sel.length >= 2 * m && sel.startsWith(mark) && sel.endsWith(mark)) {
+      const inner = sel.slice(m, sel.length - m);
+      ta.value = v.slice(0, s) + inner + v.slice(e);
+      ta.focus();
+      ta.selectionStart = s; ta.selectionEnd = s + inner.length;
+    } else if (v.slice(s - m, s) === mark && v.slice(e, e + m) === mark) {
+      ta.value = v.slice(0, s - m) + sel + v.slice(e + m);
+      ta.focus();
+      ta.selectionStart = s - m; ta.selectionEnd = e - m;
+    } else {
+      ta.value = v.slice(0, s) + mark + sel + mark + v.slice(e);
+      ta.focus();
+      ta.selectionStart = s + m; ta.selectionEnd = e + m + sel.length;
+    }
+  };
+
+  // Obsidian editor hotkeys, on the plain textarea (parity with the main editor's
+  // obsidianKeymap): ⌘B bold · ⌘I italic · ⌘K add link · ⌘L task · ⌘/ comment.
+  const onTextKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') { (e.target as HTMLTextAreaElement).blur(); return; }
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'b') { e.preventDefault(); toggleWrap('**'); }
+    else if (k === 'i') { e.preventDefault(); toggleWrap('*'); }
+    else if (k === 'k') { e.preventDefault(); openLinkPicker(); }
+    else if (k === 'l') { e.preventDefault(); setLinePrefix('- [ ] '); }
+    else if (k === '/') { e.preventDefault(); toggleWrap('%%'); }
+  };
+
   // Replace the block prefix (heading/list/quote) on the caret's line.
   const setLinePrefix = (prefix: string) => {
     const ta = editTaRef.current;
@@ -625,13 +691,13 @@ export default function CanvasView() {
     { label: 'Add external link', act: () => applyFormat('[', '](https://)') },
     { sep: true },
     { label: 'Format', sub: [
-      { label: 'Bold', act: () => applyFormat('**') },
-      { label: 'Italic', act: () => applyFormat('*') },
-      { label: 'Strikethrough', act: () => applyFormat('~~') },
-      { label: 'Highlight', act: () => applyFormat('==') },
-      { label: 'Code', act: () => applyFormat('`') },
-      { label: 'Math', act: () => applyFormat('$') },
-      { label: 'Comment', act: () => applyFormat('%%') },
+      { label: 'Bold', act: () => toggleWrap('**') },
+      { label: 'Italic', act: () => toggleWrap('*') },
+      { label: 'Strikethrough', act: () => toggleWrap('~~') },
+      { label: 'Highlight', act: () => toggleWrap('==') },
+      { label: 'Code', act: () => toggleWrap('`') },
+      { label: 'Math', act: () => toggleWrap('$') },
+      { label: 'Comment', act: () => toggleWrap('%%') },
       { sep: true },
       { label: 'Clear formatting', act: clearFormatting },
     ] },
@@ -644,6 +710,11 @@ export default function CanvasView() {
       { label: 'Body', act: () => setLinePrefix('') },
       { sep: true },
       { label: 'Quote', act: () => setLinePrefix('> ') },
+    ] },
+    { label: 'Align', sub: [
+      { label: 'Align left', act: () => setTextAlign('left') },
+      { label: 'Align center', act: () => setTextAlign('center') },
+      { label: 'Align right', act: () => setTextAlign('right') },
     ] },
     { label: 'Insert', sub: [
       { label: 'Table', act: () => insertAtCaret('\n| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n') },
@@ -774,7 +845,14 @@ export default function CanvasView() {
 
   // ---- Pointer handling on the viewport ------------------------------------
   const onViewportPointerDown = (e: React.PointerEvent) => {
-    if (e.button === 1 || e.button === 2) return;
+    // Middle- or right-drag pans from anywhere (Obsidian parity), even over a node.
+    if (e.button === 1 || e.button === 2) {
+      try { vpRef.current?.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      drag.current = { mode: 'pan', sx: e.clientX, sy: e.clientY, tx: view.tx, ty: view.ty, moved: false };
+      if (vpRef.current) vpRef.current.style.cursor = 'grabbing';
+      return;
+    }
+    if (e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest('.canvas-node, .canvas-handle, .canvas-port, .canvas-edge-hit, .canvas-edge-endpoint, .canvas-toolbar, .canvas-menu, .canvas-notepicker, .canvas-dropmenu, .canvas-textmenu, .canvas-edge-label')) {
       return; // handled by the element's own onPointerDown
@@ -787,13 +865,15 @@ export default function CanvasView() {
       commitTextEdit();
     }
     try { vpRef.current?.setPointerCapture(e.pointerId); } catch { /* synthetic/inactive pointer */ }
-    // Shift+drag on empty space = marquee select; plain drag = pan the viewport.
-    if (e.shiftKey && !space.current) {
-      const c = toCanvas(e.clientX, e.clientY);
-      drag.current = { mode: 'marquee', cx: c.x, cy: c.y, additive: true };
-    } else {
+    // Obsidian model: left-drag on empty canvas = rubber-band select (Shift = add
+    // to selection). Pan = hold Space, or use a middle/right drag. On touch a single
+    // finger still pans (two fingers pinch/zoom); selection there is via the toolbar.
+    if (space.current || e.pointerType === 'touch') {
       drag.current = { mode: 'pan', sx: e.clientX, sy: e.clientY, tx: view.tx, ty: view.ty, moved: false };
-      if (vpRef.current) vpRef.current.style.cursor = 'grabbing';
+      if (vpRef.current && e.pointerType !== 'touch') vpRef.current.style.cursor = 'grabbing';
+    } else {
+      const c = toCanvas(e.clientX, e.clientY);
+      drag.current = { mode: 'marquee', cx: c.x, cy: c.y, additive: e.shiftKey };
     }
   };
 
@@ -802,8 +882,9 @@ export default function CanvasView() {
     // which would capture the pointer and swallow the click). Viewport pan is
     // still suppressed because the target is inside .canvas-node.
     if ((e.target as HTMLElement).closest('[data-wikilink], a')) return;
-    e.stopPropagation();
+    // Let middle/right buttons bubble to the viewport so a pan can start over a node.
     if (e.button !== 0) return;
+    e.stopPropagation();
     // Touch double-tap → activate (edit text / open file / open link). Android Chrome
     // does not reliably synthesize dblclick from two taps, so detect it ourselves.
     if (e.pointerType === 'touch') {
@@ -889,14 +970,32 @@ export default function CanvasView() {
     }
     const c = toCanvas(e.clientX, e.clientY);
     if (dr.mode === 'move') {
-      const dx = c.x - dr.cx;
-      const dy = c.y - dr.cy;
+      let dx = c.x - dr.cx;
+      let dy = c.y - dr.cy;
+      // Shift while moving locks to the dominant axis (Obsidian parity).
+      if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         // Capture on the first real move so the drag survives the cursor leaving a
         // node — but NOT on pointerdown, so a plain click/dblclick still targets the node.
         if (!dr.moved) { try { vpRef.current?.setPointerCapture(e.pointerId); } catch { /* ignore */ } }
         dr.moved = true;
       }
+      // Alignment snapping: line the moving rects' edges/centers up with the other
+      // nodes, and draw guide lines (skipped while Alt/Ctrl frees the drag).
+      let gx: SnapGuide | null = null, gy: SnapGuide | null = null;
+      if (dr.moved && snapEnabled(e)) {
+        const moving: Rect[] = [];
+        const statics: Rect[] = [];
+        for (const n of dataRef.current.nodes) {
+          const o = dr.orig.get(n.id);
+          if (o) moving.push({ x: o.x + dx, y: o.y + dy, width: n.width, height: n.height });
+          else if (n.type !== 'group') statics.push({ x: n.x, y: n.y, width: n.width, height: n.height });
+        }
+        const dist = Math.ceil(SNAP_BASE / viewRef.current.scale);
+        const s = snapMove(moving, statics, dist);
+        dx += s.dx; dy += s.dy; gx = s.x; gy = s.y;
+      }
+      setSnap(gx || gy ? { x: gx, y: gy } : null);
       setData((d) => ({
         ...d,
         nodes: d.nodes.map((n) => {
@@ -929,6 +1028,7 @@ export default function CanvasView() {
   const onViewportPointerUp = (e: React.PointerEvent) => {
     const dr = drag.current;
     drag.current = null;
+    setSnap(null); // drop any alignment guides
     try { vpRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (vpRef.current) vpRef.current.style.cursor = space.current ? 'grab' : '';
     if (!dr) return;
@@ -950,7 +1050,16 @@ export default function CanvasView() {
     } else if (dr.mode === 'marquee') {
       const m = marquee;
       setMarquee(null);
-      if (!m || (m.w < 3 && m.h < 3)) return;
+      if (!m || (m.w < 3 && m.h < 3)) {
+        // A plain left-click on empty canvas (no drag) clears the selection.
+        if (!dr.additive) {
+          setSel(EMPTY_SEL);
+          setEditingNode(null);
+          setEditingEdge(null);
+          if (notePicker) setNotePicker(false);
+        }
+        return;
+      }
       const hit = dataRef.current.nodes.filter(
         (n) => n.x < m.x + m.w && n.x + n.width > m.x && n.y < m.y + m.h && n.y + n.height > m.y,
       );
@@ -1134,6 +1243,10 @@ export default function CanvasView() {
   })();
   const onlyEdges = sel.edges.size > 0 && sel.nodes.size === 0;
   const selEdgeHasLabel = onlyEdges && data.edges.some((e) => sel.edges.has(e.id) && e.label);
+  // Text-card alignment state (only when ≥1 selected node is a text card).
+  const selTextNodes = data.nodes.filter((n) => sel.nodes.has(n.id) && n.type === 'text') as TextNode[];
+  const selHasText = selTextNodes.length > 0;
+  const curAlign: TextAlign = selTextNodes[0]?.textAlign ?? 'left';
   // Current color of the selection (first selected node/edge) → highlight its swatch.
   const selColor: string | undefined = (() => {
     const n = data.nodes.find((x) => sel.nodes.has(x.id));
@@ -1190,8 +1303,8 @@ export default function CanvasView() {
           <defs>
             {/* auto-start-reverse → the `from` arrowhead points outward (back toward
                 its node) and sits ON the line instead of hidden under the node. */}
-            <marker id="cv-arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-              <path d="M0,0 L7,3 L0,6 Z" fill="context-stroke" />
+            <marker id="cv-arrow" markerWidth="14" markerHeight="14" refX="11" refY="5.5" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+              <path d="M0,0 L11,5.5 L0,11 Z" fill="context-stroke" />
             </marker>
           </defs>
           {data.edges.map((edge) => {
@@ -1359,12 +1472,11 @@ export default function CanvasView() {
                       // paths route through commitTextEdit, which is idempotent.)
                       commitTextEdit(e.target.value);
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') (e.target as HTMLTextAreaElement).blur();
-                    }}
+                    onKeyDown={onTextKeyDown}
+                    style={{ textAlign: (n as TextNode).textAlign ?? 'left' }}
                   />
                 ) : (
-                  <div className="canvas-text-body markdown-preview">
+                  <div className="canvas-text-body markdown-preview" style={{ textAlign: (n as TextNode).textAlign ?? 'left' }}>
                     {(n as TextNode).text.trim() ? <Preview source={(n as TextNode).text} /> : <span className="canvas-placeholder">Empty card — double-click to edit</span>}
                   </div>
                 )
@@ -1384,6 +1496,14 @@ export default function CanvasView() {
         {/* Marquee */}
         {marquee && (
           <div className="canvas-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
+        )}
+
+        {/* Alignment guides (Obsidian's canvas-snaps) — drawn while dragging nodes */}
+        {snap && (snap.x || snap.y) && (
+          <svg className="canvas-snaps" style={{ overflow: 'visible', position: 'absolute', left: 0, top: 0, width: 1, height: 1 }}>
+            {snap.x && <SnapLine g={snap.x} axis="x" scale={view.scale} />}
+            {snap.y && <SnapLine g={snap.y} axis="y" scale={view.scale} />}
+          </svg>
         )}
       </div>
 
@@ -1405,6 +1525,21 @@ export default function CanvasView() {
             <button className="canvas-menu-btn" title="Zoom to selection" onClick={zoomToSelection}>
               <Icon name="zoom-in" size={16} />
             </button>
+            {selHasText && (
+              <>
+                <span className="canvas-menu-vsep" />
+                {(['left', 'center', 'right'] as const).map((a) => (
+                  <button
+                    key={a}
+                    className={`canvas-menu-btn ${curAlign === a ? 'active' : ''}`}
+                    title={`Align ${a}`}
+                    onClick={() => setTextAlign(a)}
+                  >
+                    <Icon name={`align-${a}`} size={16} />
+                  </button>
+                ))}
+              </>
+            )}
             {onlyEdges && (
               <>
                 <span className="canvas-dir-wrap">
@@ -1643,17 +1778,47 @@ function centerOf(n: { x: number; y: number; width: number; height: number }) {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 };
 }
 
+/** One alignment guide line + endpoint dots (canvas coords; thickness kept
+    constant on screen by dividing by scale). axis 'x' = vertical line. */
+function SnapLine({ g, axis, scale }: { g: SnapGuide; axis: 'x' | 'y'; scale: number }) {
+  const x1 = axis === 'x' ? g.coord : g.min;
+  const y1 = axis === 'x' ? g.min : g.coord;
+  const x2 = axis === 'x' ? g.coord : g.max;
+  const y2 = axis === 'x' ? g.max : g.coord;
+  const r = 2.5 / scale;
+  return (
+    <g className="canvas-snap-guide">
+      <line x1={x1} y1={y1} x2={x2} y2={y2} strokeWidth={1 / scale} />
+      <circle cx={x1} cy={y1} r={r} />
+      <circle cx={x2} cy={y2} r={r} />
+    </g>
+  );
+}
+
 /** Hierarchical text-card formatting menu (Obsidian parity). Buttons preventDefault
     on mousedown so the editing textarea keeps focus + selection. */
 type FmtItem = { label?: string; act?: () => void; sub?: FmtItem[]; sep?: boolean };
 function TextFormatMenu({ items, x, y, onClose }: { items: FmtItem[]; x: number; y: number; onClose: () => void }) {
   const [open, setOpen] = useState(-1);
-  const left = Math.min(x, window.innerWidth - 220);
-  const top = Math.min(y, window.innerHeight - 360);
+  const ref = useRef<HTMLDivElement>(null);
+  // Open at the cursor, then measure and nudge fully on-screen (shift up/left if it
+  // would overflow the bottom/right edge). Runs before paint → no visible jump.
+  const [pos, setPos] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const m = 8;
+    const r = el.getBoundingClientRect();
+    let left = x, top = y;
+    if (left + r.width > window.innerWidth - m) left = window.innerWidth - r.width - m;
+    if (top + r.height > window.innerHeight - m) top = window.innerHeight - r.height - m;
+    setPos({ left: Math.max(m, left), top: Math.max(m, top) });
+  }, [x, y]);
   return (
     <div
+      ref={ref}
       className="canvas-textmenu"
-      style={{ left, top }}
+      style={{ left: pos.left, top: pos.top }}
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}

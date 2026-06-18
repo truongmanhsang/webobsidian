@@ -11,6 +11,7 @@ import * as vault from '../services/vault.js';
 import { getActiveShare } from '../services/shares.js';
 import { isUnlocked } from './shares.js';
 import { renderNoteHtml, metaDescription, firstImage, escapeHtml } from '../services/renderhtml.js';
+import { renderCanvasHtml, canvasDescription, canvasFirstImage } from '../services/rendercanvas.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,7 +42,16 @@ function page(opts: {
   body: string;
   css: string;
   noindex?: boolean;
+  /** Skip the narrow markdown-preview column (used by the full-width canvas view). */
+  bare?: boolean;
 }): string {
+  const inner = opts.bare
+    ? opts.body
+    : `<div class="markdown-preview">
+<div class="preview-inner">
+${opts.body}
+</div>
+</div>`;
   return `<!doctype html>
 <html lang="vi">
 <head>
@@ -52,12 +62,8 @@ function page(opts: {
 ${opts.head ?? ''}<style>${opts.css}</style>
 </head>
 <body>
-<div class="theme-light public-page">
-<div class="markdown-preview">
-<div class="preview-inner">
-${opts.body}
-</div>
-</div>
+<div class="theme-light public-page${opts.bare ? ' public-canvas' : ''}">
+${inner}
 </div>
 </body>
 </html>`;
@@ -120,16 +126,19 @@ document.getElementById('unlock-form').addEventListener('submit', async (e) => {
     }
 
     const content = await vault.readFileText(share.path);
-    const title = (share.path.split('/').pop() ?? share.path).replace(/\.(md|markdown)$/i, '');
-    const desc = metaDescription(content);
-    const img = firstImage(content);
-    const ogImage = img?.url ?? (img?.vault
-      ? `${baseUrl(req)}/public/shares/${share.id}/file?path=${encodeURIComponent(img.vault)}`
+    const isCanvas = /\.canvas$/i.test(share.path);
+    const title = (share.path.split('/').pop() ?? share.path).replace(/\.(md|markdown|canvas)$/i, '');
+    const fileUrl = (p: string) => `/public/shares/${share.id}/file?path=${encodeURIComponent(p)}`;
+    const desc = isCanvas ? canvasDescription(content) : metaDescription(content);
+    const imgVault = isCanvas ? canvasFirstImage(content) : null;
+    const img = isCanvas ? null : firstImage(content);
+    const ogImage = img?.url ?? (img?.vault ?? imgVault
+      ? `${baseUrl(req)}/public/shares/${share.id}/file?path=${encodeURIComponent((img?.vault ?? imgVault) as string)}`
       : null);
 
-    const html = await renderNoteHtml(content, (p) =>
-      `/public/shares/${share.id}/file?path=${encodeURIComponent(p)}`,
-    );
+    const html = isCanvas
+      ? await renderCanvasHtml(content, fileUrl)
+      : await renderNoteHtml(content, fileUrl);
 
     const head = [
       `<meta name="description" content="${escapeHtml(desc)}" />`,
@@ -155,7 +164,10 @@ document.getElementById('unlock-form').addEventListener('submit', async (e) => {
         title,
         head,
         css,
-        body: `<div class="inline-title">${escapeHtml(title)}</div>\n${html}`,
+        bare: isCanvas,
+        body: isCanvas
+          ? `<div class="public-canvas-title">${escapeHtml(title)}</div>\n${html}`
+          : `<div class="inline-title">${escapeHtml(title)}</div>\n${html}`,
       }),
     );
   }),
