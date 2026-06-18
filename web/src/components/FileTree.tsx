@@ -285,13 +285,20 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
   return (
     <div className="tree-item">
       <div
-        className={`tree-row ${activePath === node.path ? 'active' : ''}`}
+        className={`tree-row ${activePath === node.path ? 'active' : ''} ${dropping ? 'drop-target' : ''}`}
         style={isCut ? { opacity: 0.5 } : undefined}
         data-path={node.path}
         draggable
         onDragStart={onDragStart}
         onClick={() => openFile(node.path)}
         onContextMenu={onContext}
+        // A file is a valid drop target too: dropping onto it moves the dragged
+        // item into the file's parent folder (Obsidian behaviour). Without this,
+        // drops on a file — or anywhere inside an expanded folder's contents —
+        // bubble up to the root handler and either no-op or move to the vault root.
+        onDragOver={(e) => { e.preventDefault(); setDropping(true); }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={onDrop}
         title={node.path}
       >
         <span className="twisty leaf" />

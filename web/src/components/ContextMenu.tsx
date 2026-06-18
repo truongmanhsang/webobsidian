@@ -46,9 +46,15 @@ export default function ContextMenu() {
     if (!menu) return;
     const onClick = () => close();
     const onEsc = (e: KeyboardEvent) => e.key === 'Escape' && close();
-    window.addEventListener('click', onClick);
+    // Attach the outside-click listener on the NEXT tick. A menu opened by a
+    // left-click (e.g. the Files header sort button) is otherwise closed instantly
+    // by the very click that opened it — that click keeps bubbling to window after
+    // React commits this effect, so the listener would fire on it. (Right-click
+    // menus were unaffected: a `contextmenu` event never fires a `click`.)
+    const t = window.setTimeout(() => window.addEventListener('click', onClick), 0);
     window.addEventListener('keydown', onEsc);
     return () => {
+      window.clearTimeout(t);
       window.removeEventListener('click', onClick);
       window.removeEventListener('keydown', onEsc);
     };

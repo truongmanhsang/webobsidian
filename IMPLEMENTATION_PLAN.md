@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-18 (Phase 30 — Canvas: marquee drag-select + alignment snap-guides + format hotkeys + text-align; Canvas public share (FR-10); + 5 fix UX: arrowhead, right-click menu pos, collapse layout, sidebar resize, bỏ nút Refresh, gộp Attachments trùng case)
+Cập nhật lần cuối: 2026-06-19 (Fix: nút Sort header Files không mở menu (click mở bị chính click đó đóng ngay) + kéo-thả file thả lên file/trong folder đang mở không di chuyển — verify CDP end-to-end)
 
 ---
 
@@ -404,6 +404,18 @@ Cập nhật lần cuối: 2026-06-18 (Phase 30 — Canvas: marquee drag-select 
       (`.cm-image-resize`) + `.image-lightbox*` + cursor `zoom-in`. Typecheck sạch.
 
 ### Nhật ký tiến độ
+- 2026-06-19 (Fix 2 bug Files panel — verify bằng Chrome DevTools end-to-end trên vault test):
+  **(1) Nút Sort không hoạt động:** menu sort mở bằng **click trái** bị đóng ngay lập tức bởi chính cú click đó.
+  `ContextMenu` gắn listener `window 'click'` để đóng khi click ra ngoài; với click trái, sau khi React commit effect,
+  cú click vẫn đang bong-bóng tới `window` → listener bắt được → đóng menu. (Menu chuột phải không dính vì sự kiện
+  `contextmenu` không phát ra `click`.) Fix: gắn listener đóng ở **tick kế tiếp** (`setTimeout(…, 0)`) trong
+  `web/src/components/ContextMenu.tsx`. Verify: click nút Sort → menu hiện đủ 6 mục (đúng như Obsidian app: File name
+  A→Z/Z→A, Modified new→old/old→new, Created new→old/old→new) → chọn "File name (Z to A)" → file đảo thứ tự (folder vẫn nhóm trước).
+  **(2) Kéo-thả di chuyển file không ăn:** chỉ **hàng folder** mới nhận drop; thả file lên một **file khác** hoặc vào
+  **vùng con của folder đang mở** thì sự kiện drop bong-bóng lên root handler → no-op (file gốc) hoặc chuyển nhầm về vault root.
+  Fix: hàng file cũng là drop target (`onDragOver/onDragLeave/onDrop` + class `drop-target`), thả lên file = chuyển vào
+  **thư mục cha của file đó** (đúng hành vi Obsidian) trong `web/src/components/FileTree.tsx`. Verify: kéo file root thả lên
+  file nằm trong folder Alpha (đang mở) → file chuyển hẳn vào Alpha (trước đó đứng yên).
 - 2026-06-18 (Phase 30 — Canvas nâng cấp tương tác + Canvas public share + chùm fix UX theo phản hồi liên tục):
   **Canvas (M25.7–25.9):** marquee kéo-chọn nhiều node + đường gióng (alignment snap-guides) port từ
   `getSnapping/O3/P3` của Obsidian asar (snap 4 góc + tâm, dist `ceil(15/scale)`, Alt tắt snap, Shift khoá trục);
