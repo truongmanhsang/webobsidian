@@ -13,6 +13,7 @@ import { useIsMobile } from '../lib/useIsMobile';
 import { editorFind, getActiveEditor } from '../lib/activeEditor';
 import { triggerAddProperty } from '../lib/livePreview';
 import { pathToUrl } from '../lib/urlsync';
+import { VIDEO_EXT_RE, AUDIO_EXT_RE } from '../lib/media';
 
 function EditorPane() {
   const activePath = useStore((s) => s.activePath);
@@ -20,6 +21,8 @@ function EditorPane() {
   const isMd = activePath ? /\.(md|markdown)$/i.test(activePath) : false;
   const isImage = activePath ? /\.(png|jpe?g|gif|svg|webp)$/i.test(activePath) : false;
   const isCanvas = activePath ? /\.canvas$/i.test(activePath) : false;
+  const isVideo = activePath ? VIDEO_EXT_RE.test(activePath) : false;
+  const isAudio = activePath ? AUDIO_EXT_RE.test(activePath) : false;
 
   if (activePath && isCanvas) {
     return <CanvasView />;
@@ -29,6 +32,19 @@ function EditorPane() {
       <div className="markdown-preview">
         <div className="preview-inner">
           <img src={api.rawUrl(activePath)} alt={activePath} />
+        </div>
+      </div>
+    );
+  }
+  if (activePath && (isVideo || isAudio)) {
+    return (
+      <div className="markdown-preview">
+        <div className="preview-inner">
+          {isVideo ? (
+            <video className="media-embed media-fileview" src={api.rawUrl(activePath)} controls preload="metadata" />
+          ) : (
+            <audio className="media-embed media-fileview" src={api.rawUrl(activePath)} controls preload="metadata" />
+          )}
         </div>
       </div>
     );

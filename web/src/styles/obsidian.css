@@ -1727,6 +1727,18 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .cm-image-wrap:hover .cm-image-resize,
 .cm-image-wrap.is-resizing .cm-image-resize { opacity: .9; }
 
+/* ---- Embedded audio/video players: `![[clip.mp4]]` / `![[song.mp3]]` ---- */
+.cm-media-wrap { display: block; max-width: 100%; line-height: 0; margin: 6px 0; }
+video.media-embed {
+  display: block; max-width: 100%; height: auto;
+  border-radius: var(--radius); background: #000;
+}
+audio.media-embed { display: block; width: min(100%, 480px); max-width: 100%; margin: 6px 0; }
+.cm-media-wrap .cm-embed-missing { line-height: normal; }
+/* Direct file view (opening a media file straight from the tree). */
+.preview-inner video.media-fileview { max-height: 80vh; }
+.preview-inner audio.media-fileview { width: min(100%, 520px); }
+
 /* ---- Full-screen image viewer (lightbox) — both Live & Reading ---- */
 .image-lightbox {
   position: fixed; inset: 0; z-index: 3000;

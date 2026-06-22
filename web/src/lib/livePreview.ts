@@ -10,6 +10,7 @@ import { StateField, StateEffect, type EditorState, type Range, type Text } from
 import { syntaxTree } from '@codemirror/language';
 import { CALLOUT_SLOT, CALLOUT_RE, calloutDefaultTitle, calloutIconSvg } from './callouts';
 import { openLightbox } from './imageLightbox';
+import { VIDEO_EXT_RE, AUDIO_EXT_RE } from './media';
 
 /**
  * Live Preview for CodeMirror 6 — an Obsidian-style WYSIWYG editing mode.
@@ -300,6 +301,45 @@ class ImageWidget extends WidgetType {
       h.addEventListener('touchstart', (e) => startResize(e, side), { passive: false });
       wrap.appendChild(h);
     }
+    return wrap;
+  }
+}
+
+/** Embedded audio/video player for `![[clip.mp4]]` / `![[song.mp3]]` (FR-2). */
+class MediaWidget extends WidgetType {
+  constructor(
+    readonly src: string,
+    readonly alt: string,
+    readonly kind: 'video' | 'audio',
+    readonly width?: number,
+  ) {
+    super();
+  }
+  eq(o: MediaWidget) {
+    return o.src === this.src && o.kind === this.kind && o.width === this.width;
+  }
+  // Let the native player controls receive pointer/keyboard events (same as the
+  // note-embed widget) instead of CodeMirror handling them.
+  ignoreEvent() {
+    return true;
+  }
+  toDOM() {
+    const wrap = document.createElement('span');
+    wrap.className = `cm-media-wrap cm-media-${this.kind}`;
+    const el = document.createElement(this.kind) as HTMLMediaElement;
+    el.src = this.src;
+    el.controls = true;
+    el.preload = 'metadata';
+    el.className = this.kind === 'video' ? 'cm-embed-video media-embed' : 'cm-embed-audio media-embed';
+    if (this.kind === 'video' && this.width) (el as HTMLVideoElement).width = this.width;
+    // Missing attachment → Obsidian-style "could not be found" box.
+    el.onerror = () => {
+      el.remove();
+      const miss = document.createElement('span');
+      wrap.appendChild(miss);
+      embedNotFound(miss, this.alt);
+    };
+    wrap.appendChild(el);
     return wrap;
   }
 }
@@ -2324,6 +2364,17 @@ function buildDecorations(view: EditorView): DecorationSet {
             }
           }
           pushReplace(s, e, Decoration.replace({ widget: new ImageWidget(attachmentUrl(href), href, w, h) }));
+        } else if (isEmbed && (VIDEO_EXT_RE.test(href) || AUDIO_EXT_RE.test(href))) {
+          // `![[clip.mp4]]` / `![[song.mp3]]` → native HTML5 player like Obsidian.
+          const kind = VIDEO_EXT_RE.test(href) ? 'video' : 'audio';
+          // width param (video only): last `|` segment `300` / `300x200`
+          let w: number | undefined;
+          if (kind === 'video' && pi > 0) {
+            const segs = inner.split('|');
+            const sm = segs[segs.length - 1].match(/^\s*([0-9]+)\s*(?:x\s*[0-9]+\s*)?$/);
+            if (sm) w = Number(sm[1]);
+          }
+          pushReplace(s, e, Decoration.replace({ widget: new MediaWidget(attachmentUrl(href), href, kind, w) }));
         } else if (isEmbed && !/\.[a-z0-9]{1,5}$/i.test(href.split('#')[0])) {
           // `![[note]]` (no binary extension) → real transclusion like Obsidian.
           pushReplace(s, e, Decoration.replace({ widget: new NoteEmbedWidget(href) }));

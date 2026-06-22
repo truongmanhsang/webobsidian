@@ -10,17 +10,13 @@ import { updateLinkGraphForFile } from '../services/links.js';
 import { scheduleAutoCommitOnSave } from '../services/git.js';
 import { resolveFile } from '../services/fileindex.js';
 import { onFileRenamed } from '../services/shares.js';
+import { mimeFor } from '../services/mime.js';
+import { sendFileWithRange } from '../services/httpfile.js';
 
 export const filesRouter = Router();
 filesRouter.use(requireAuth);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
-
-const MIME: Record<string, string> = {
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-  '.svg': 'image/svg+xml', '.webp': 'image/webp', '.pdf': 'application/pdf',
-  '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.webm': 'video/webm', '.ico': 'image/x-icon',
-};
 
 const isMd = (p: string) => /\.(md|markdown)$/i.test(p);
 
@@ -57,10 +53,9 @@ filesRouter.get(
     if (vault.isTextFile(rel)) {
       res.json({ path: rel, content: await vault.readFileText(rel), encoding: 'utf8' });
     } else {
-      const buf = await vault.readFileBuffer(rel);
-      const mime = MIME[path.extname(rel).toLowerCase()] ?? 'application/octet-stream';
-      res.setHeader('Content-Type', mime);
-      res.send(buf);
+      // Stream with Range support so embedded <video>/<audio> can seek.
+      const abs = await vault.resolveInVault(rel);
+      await sendFileWithRange(req, res, abs, mimeFor(rel));
     }
   }),
 );

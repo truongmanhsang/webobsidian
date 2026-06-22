@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import type { Request } from 'express';
-import path from 'node:path';
 import jwt from 'jsonwebtoken';
 import { asyncHandler } from '../middleware/error.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -13,16 +12,12 @@ import {
   type ShareRecord,
 } from '../services/shares.js';
 import { canvasEmbedTargets } from '../services/rendercanvas.js';
+import { mimeFor } from '../services/mime.js';
+import { sendFileWithRange } from '../services/httpfile.js';
 
 const isMd = (p: string) => /\.(md|markdown)$/i.test(p);
 const isCanvas = (p: string) => /\.canvas$/i.test(p);
 const isShareable = (p: string) => isMd(p) || isCanvas(p);
-
-const MIME: Record<string, string> = {
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-  '.svg': 'image/svg+xml', '.webp': 'image/webp', '.pdf': 'application/pdf',
-  '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.webm': 'video/webm', '.ico': 'image/x-icon',
-};
 
 /** Never send the password hash to the client — expose `hasPassword` only. */
 function redact(rec: ShareRecord) {
@@ -224,9 +219,8 @@ publicSharesRouter.get(
       res.status(404).json({ error: 'not found' });
       return;
     }
-    const buf = await vault.readFileBuffer(target);
-    res.setHeader('Content-Type', MIME[path.extname(target).toLowerCase()] ?? 'application/octet-stream');
-    res.setHeader('Cache-Control', 'private, max-age=300');
-    res.send(buf);
+    // Stream with Range support so shared <video>/<audio> can seek.
+    const abs = await vault.resolveInVault(target);
+    await sendFileWithRange(req, res, abs, mimeFor(target), { 'Cache-Control': 'private, max-age=300' });
   }),
 );
