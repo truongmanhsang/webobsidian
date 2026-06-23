@@ -5,7 +5,8 @@
   "description": "WebObsidian — a self-hosted Obsidian-compatible web app",
   "workspaces": [
     "server",
-    "web"
+    "web",
+    "desktop"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
@@ -13,7 +14,10 @@
     "dev:web": "npm --workspace web run dev",
     "build": "npm --workspace web run build && npm --workspace server run build",
     "start": "npm --workspace server run start",
-    "typecheck": "npm --workspace server run typecheck && npm --workspace web run typecheck"
+    "typecheck": "npm --workspace server run typecheck && npm --workspace web run typecheck",
+    "desktop": "npm run build && npm --workspace desktop run dev",
+    "desktop:dist": "npm run build && npm --workspace desktop run dist",
+    "desktop:publish": "npm run build && npm --workspace desktop run dist:publish"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

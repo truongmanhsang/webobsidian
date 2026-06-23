@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-22 (Fix Graph view trắng + lỗi `unsafe-eval` trên host CSP: import `pixi.js/unsafe-eval` trước `app.init()` trong `GraphView.tsx`)
+Cập nhật lần cuối: 2026-06-22 (FR-13 — Desktop app Electron đa nền tảng: workspace `desktop/`, esbuild-bundle server, electron-builder, CI `release.yml` publish GitHub Release)
 
 ---
 
@@ -404,7 +404,48 @@ Cập nhật lần cuối: 2026-06-22 (Fix Graph view trắng + lỗi `unsafe-ev
 - [x] M26.4 Reading view (Preview.tsx) click `<img>` → `openLightbox(currentSrc, alt)`; CSS handle resize
       (`.cm-image-resize`) + `.image-lightbox*` + cursor `zoom-in`. Typecheck sạch.
 
+## Phase 27 — Desktop app (Electron, multi-platform) — FR-13, PRD 1.5 (theo yêu cầu người dùng)
+- [x] M27.1 Workspace `desktop/` (Electron shell). `src/main.ts`: single-instance lock; chọn vault lần đầu
+      (dialog, default `~/Documents/WebObsidianVault`); `DATA_DIR`/config/logs trong `userData`; **spawn server
+      hiện có như tiến trình con** qua `ELECTRON_RUN_AS_NODE` bind `127.0.0.1` + cổng trống ngẫu nhiên; chờ
+      `/healthz`; `BrowserWindow` load `http://127.0.0.1:<port>`; menu File (Switch Vault / Open Vault·Data·Logs),
+      Edit/View/Window/Help; mở external link ra browser hệ thống; kill server khi quit. `src/preload.ts` tối giản.
+- [x] M27.2 Auto-login liền mạch: sinh mật khẩu ngẫu nhiên/máy (lưu `userData`), truyền `WEBOBSIDIAN_PASSWORD`
+      (override); login qua Electron `net`, lấy JWT từ `Set-Cookie`, đổi pass mặc định→secret bằng Bearer để
+      tắt `mustChangePassword`, rồi **seed cookie JWT vào `session.defaultSession`** → cửa sổ vào thẳng app, không
+      hỏi password. Verify: data dir fresh → `login` trả `mustChangePassword:false`, `userPasswordHash` đã set.
+- [x] M27.3 Build pipeline `scripts/build.mjs`: esbuild bundle `desktop/src` (main+preload, external `electron`)
+      → `dist/`; esbuild bundle **server đã compile** (`server/dist/index.js`) thành 1 file ESM
+      `.gen/server/dist/index.mjs` (external `fsevents`, banner `createRequire`); copy `server/public` →
+      `.gen/server/public`. Bundle server smoke-test chạy được (healthz/login OK).
+- [x] M27.4 electron-builder config (trong `desktop/package.json`): `extraResources` map `.gen/server`→
+      `resources/server`; targets macOS `dmg`+`zip` (arm64/x64), Windows `nsis`+`portable` (x64/arm64/ia32),
+      Linux `AppImage`+`deb` (x64/arm64); icon từ `assets/logo.png`→`buildResources/icon.png` (1024²);
+      `electronVersion` pin 33.4.11 (workspace hoist). Verify: `electron-builder --dir` đóng gói `WebObsidian.app`,
+      chạy bản packaged → server boot từ `resources/server/dist/index.mjs`, healthz/login OK.
+- [x] M27.5 CI: `.github/workflows/release.yml` trigger tag `v*` (+ manual), matrix macOS/Windows/Ubuntu, mỗi
+      runner `npm ci` → `npm run build` → `npm --workspace desktop run dist:publish` (electron-builder publish
+      GitHub Release draft, `GH_TOKEN`, `CSC_IDENTITY_AUTO_DISCOVERY=false`). `ci.yml` thêm typecheck + build
+      bundle desktop. Root scripts `desktop`/`desktop:dist`/`desktop:publish`; `.gitignore` thêm `desktop/.gen`,
+      `desktop/release`.
+
 ### Nhật ký tiến độ
+- 2026-06-22 (FR-13 — Desktop app Electron đa nền tảng, theo yêu cầu người dùng): bundle WebObsidian thành
+  app cài đặt mac/win/linux (arm64/x64/ia32) tải từ GitHub Release. Thêm workspace `desktop/` là **Electron
+  shell** spawn đúng server Express hiện có như tiến trình con (`ELECTRON_RUN_AS_NODE`, `127.0.0.1` + cổng
+  ngẫu nhiên) rồi load SPA trong `BrowserWindow` — không đổi 1 dòng server/web code. Mấu chốt đóng gói: server
+  **không có native module runtime** (chỉ `fsevents` optional/macOS) nên esbuild bundle được thành **1 file
+  `.mjs`** và cross-arch chỉ là tải Electron binary tương ứng (không cần rebuild/qemu/wine). UX liền mạch: lần
+  đầu chọn vault, dữ liệu vào `userData`, **auto-login** bằng mật khẩu ngẫu nhiên/máy (seed JWT cookie vào
+  session, tự đặt custom password để không bắt đổi pass). Đóng gói electron-builder: dmg/zip · nsis/portable ·
+  AppImage/deb; CI `release.yml` matrix 3 OS publish GitHub Release (draft) khi push tag `v*`. **Verify thật
+  trên macOS arm64**: (1) bundle server chạy độc lập → healthz `{ok:true}`, login override OK; (2) chạy Electron
+  (unpacked) với config seed → server boot cổng ngẫu nhiên, `userPasswordHash` set, `mustChangePassword:false`,
+  không lỗi; (3) `electron-builder --dir` → `WebObsidian.app`, layout `resources/server/{dist,public}` đúng,
+  chạy bản packaged → server boot từ resources, healthz/login OK. Typecheck desktop sạch. *Gotcha:* shell có
+  `ELECTRON_RUN_AS_NODE=1` (từ crawbot) khiến `require('electron')`→string lúc test → launch test phải
+  `env -u ELECTRON_RUN_AS_NODE` (app packaged không bị); electron hoist root node_modules nên phải pin
+  `electronVersion` cho builder. **Chưa làm:** code-sign/notarize, auto-update.
 - 2026-06-22 (Fix Graph view dưới CSP không cho `unsafe-eval`): trên host production (vd `360of.me`) Graph
   view trắng + lỗi `Current environment does not allow unsafe-eval, please use pixi.js/unsafe-eval module`.
   PixiJS v8 sinh code shader/UBO bằng `new Function()`, bị CSP chặn. Sửa: trong `GraphView.tsx` import

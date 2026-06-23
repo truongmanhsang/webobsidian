@@ -82,6 +82,24 @@ Out of the box it serves the bundled `./sample-vault`, so the stack boots immedi
 deployment settings live in **`.env`** (git-ignored) — you never edit the tracked
 `docker-compose.yml`, so a `git pull` / redeploy keeps your config and vault mapping intact.
 
+## 🖥️ Desktop app (no server setup)
+
+Prefer a native app? Grab an installer from the
+[**Releases**](https://github.com/xnohat/webobsidian/releases) page — available for
+**macOS / Windows / Linux** (arm64 · x64 · ia32):
+
+| Platform | Download |
+|----------|----------|
+| macOS    | `.dmg` (or `.zip`) — arm64 / x64 |
+| Windows  | NSIS installer `.exe` or portable `.exe` — x64 / arm64 / ia32 |
+| Linux    | `.AppImage` or `.deb` — x64 / arm64 |
+
+The desktop app bundles the whole server, picks your vault folder on first launch, and
+**logs you in automatically** — no password to type, no Docker. Apps are currently
+**unsigned**, so macOS Gatekeeper / Windows SmartScreen will warn on first open (right-click →
+Open on macOS). Build it yourself with `npm run desktop:dist`; see
+[`desktop/README.md`](desktop/README.md) for details.
+
 > 🔑 **Default password is `123456`.** Log in right away, then change it in
 > **Settings → Account**. To seed a different password on first run, set
 > `WEBOBSIDIAN_PASSWORD` in `.env`. Forgot it? Set `WEBOBSIDIAN_PASSWORD` (plaintext) or

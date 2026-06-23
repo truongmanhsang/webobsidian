@@ -25,8 +25,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Typecheck desktop
+        run: npm --workspace desktop run typecheck
+
       - name: Build
         run: npm run build
+
+      - name: Build desktop bundle
+        run: npm --workspace desktop run build
 
   docker:
     name: Docker image builds
