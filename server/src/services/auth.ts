@@ -92,14 +92,23 @@ const TOKEN_TTL = '30d';
 
 export async function issueToken(): Promise<string> {
   const s = await getSettings();
-  return jwt.sign({ sub: 'owner' }, s.auth.jwtSecret, { expiresIn: TOKEN_TTL });
+  return jwt.sign({ sub: 'owner' }, s.auth.jwtSecret, {
+    expiresIn: TOKEN_TTL,
+    algorithm: 'HS256',
+  });
 }
 
+/**
+ * Xác minh token phiên CHỦ SỞ HỮU. Ngoài chữ ký hợp lệ, token bắt buộc phải có
+ * `sub === 'owner'` và dùng đúng thuật toán HS256. Điều này ngăn các token khác
+ * cũng ký bằng cùng `jwtSecret` (ví dụ unlock-cookie của share công khai, mang
+ * `sub: 'share'`) bị tái sử dụng như một phiên owner đầy đủ.
+ */
 export async function verifyToken(token: string): Promise<boolean> {
   try {
     const s = await getSettings();
-    jwt.verify(token, s.auth.jwtSecret);
-    return true;
+    const payload = jwt.verify(token, s.auth.jwtSecret, { algorithms: ['HS256'] });
+    return typeof payload === 'object' && payload !== null && payload.sub === 'owner';
   } catch {
     return false;
   }

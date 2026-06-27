@@ -54,7 +54,14 @@ function sanitizeVault(v: any) {
   if (typeof v.trash === 'string') out.trash = v.trash;
   if (v.deleteMode === 'trash' || v.deleteMode === 'permanent') out.deleteMode = v.deleteMode;
   if (typeof v.attachmentDir === 'string') out.attachmentDir = v.attachmentDir;
-  if (Array.isArray(v.allowedRoots)) out.allowedRoots = v.allowedRoots;
+  if (Array.isArray(v.allowedRoots)) {
+    // allowedRoots is the gate for vault.path / Browse, so keep it well-formed:
+    // only non-empty strings, normalised to absolute paths. Drops anything else
+    // instead of persisting garbage (objects/numbers) that later crash path.* .
+    out.allowedRoots = v.allowedRoots
+      .filter((r: unknown): r is string => typeof r === 'string' && r.trim() !== '')
+      .map((r: string) => path.resolve(r));
+  }
   return out;
 }
 

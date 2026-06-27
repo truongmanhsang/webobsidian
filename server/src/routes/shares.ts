@@ -135,8 +135,11 @@ export async function isUnlocked(req: Request, share: ShareRecord): Promise<bool
   if (!token) return false;
   try {
     const s = await getSettings();
-    const payload = jwt.verify(token, s.auth.jwtSecret) as { share?: string };
-    return payload.share === share.id;
+    const payload = jwt.verify(token, s.auth.jwtSecret, { algorithms: ['HS256'] }) as {
+      sub?: string;
+      share?: string;
+    };
+    return payload.sub === 'share' && payload.share === share.id;
   } catch {
     return false;
   }
@@ -158,7 +161,10 @@ publicSharesRouter.post(
       return;
     }
     const s = await getSettings();
-    const token = jwt.sign({ share: share.id }, s.auth.jwtSecret, { expiresIn: UNLOCK_TTL });
+    const token = jwt.sign({ sub: 'share', share: share.id }, s.auth.jwtSecret, {
+      expiresIn: UNLOCK_TTL,
+      algorithm: 'HS256',
+    });
     // Path '/' so both /public/shares/<id>/* (content, files) AND the SSR page
     // at /share/<id> receive it. The JWT is bound to this share id only.
     res.cookie(unlockCookie(share.id), token, {

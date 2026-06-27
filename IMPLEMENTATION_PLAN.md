@@ -4,7 +4,7 @@
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm · `[x]` xong.
 > Cập nhật file này **mỗi khi** một mục thay đổi trạng thái.
 
-Cập nhật lần cuối: 2026-06-23 (fix — internal link tới file `.canvas` mở đúng canvas thay vì tạo `*.canvas.md`)
+Cập nhật lần cuối: 2026-06-27 (security fix — chặn leo thang quyền: token unlock của share không còn được chấp nhận như phiên owner)
 
 ---
 
@@ -430,6 +430,22 @@ Cập nhật lần cuối: 2026-06-23 (fix — internal link tới file `.canvas
       `desktop/release`.
 
 ### Nhật ký tiến độ
+- 2026-06-27 (security fix — leo thang quyền qua token share): `verifyToken()` (server/src/services/auth.ts)
+  chỉ kiểm tra chữ ký nên **mọi** token ký bằng `auth.jwtSecret` đều được chấp nhận như phiên owner. Endpoint
+  public `POST /public/shares/:id/unlock` ký unlock-cookie bằng cùng secret → người được chia sẻ (có mật khẩu
+  share) có thể replay JWT đó làm Bearer token và đọc/ghi toàn vault, `/api/settings`, `/api/keys`, WS stream.
+  **Sửa:** (1) `verifyToken()` bắt buộc `sub === 'owner'` và ghim `algorithms: ['HS256']` (chặn cả alg=none).
+  (2) `issueToken()` ghim HS256. (3) Defense-in-depth: unlock token nay mang `sub: 'share'`, và `isUnlocked()`
+  (shares.ts) xác minh `sub === 'share'` + đúng `share.id`, ghim HS256. Đã xác minh: owner=accept, share=reject,
+  alg=none=reject. Typecheck sạch. Báo cáo riêng tư từ enduser theo SECURITY.md (v0.1.0, commit 8c5c283).
+  **Kèm 2 hardening mức thấp từ cùng báo cáo:** (a) `rendercanvas.ts` — geometry node (`x/y/width/height`) và
+  `textAlign` lấy từ JSON `.canvas` bị nội suy thẳng vào `style="…"` không escape/ép kiểu → `.canvas` độc hại
+  (import/tải về rồi share) có thể thoát attribute & chèn HTML. Sửa: ép geometry về số hữu hạn (`num()`) ngay khi
+  parse nodes (an toàn cho cả `style`, `bbox`, phép cộng `shifted`), whitelist `textAlign` ∈ {left,center,right}.
+  Đã test: payload `<script>`/`onerror` bị vô hiệu. (b) `settings.ts#sanitizeVault` — `allowedRoots` nay lọc chỉ
+  string không rỗng và `path.resolve` về tuyệt đối, tránh persist phần tử rác làm crash `path.*`. **Hoãn (item 1):**
+  default-password (`123456`) login qua API là thiết kế có chủ đích ("dùng được ngay", auth.ts §10-11) — không sửa
+  lặng lẽ; nếu siết cần cập nhật PRD trước. Prod hiện đã đặt pass tùy chỉnh nên không bị phơi nhiễm.
 - 2026-06-23 (fix — internal link tới file `.canvas`): click wikilink trỏ tới `Foo.canvas` bị điều hướng sang
   note markdown mới `Foo.canvas.md`. Nguyên nhân: link graph (`keyToPath`) chỉ index file markdown nên
   `/api/.../resolve` trả `null` cho target có đuôi `.canvas` → client rơi vào nhánh tạo note & nối thêm `.md`.

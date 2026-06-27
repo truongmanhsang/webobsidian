@@ -36,6 +36,14 @@ function resolveColor(c?: string): string | null {
   return PRESET[c] ?? c;
 }
 
+/** Coerce a JSON-supplied geometry field to a finite number. Untrusted `.canvas`
+ *  files (imported/downloaded then shared) may carry strings here — leaving them
+ *  unescaped in `style="left:${x}px"` is an attribute-injection vector. */
+function num(v: unknown, fallback = 0): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function sideAnchor(n: Rect, side: Side): { x: number; y: number } {
   switch (side) {
     case 'top': return { x: n.x + n.width / 2, y: n.y };
@@ -89,7 +97,7 @@ async function renderNode(n: CNode, fileUrl: (p: string) => string): Promise<str
     return `<div class="canvas-node canvas-group" style="${style}">${label}</div>`;
   }
   if (n.type === 'text') {
-    const align = n.textAlign ?? 'left';
+    const align = n.textAlign === 'center' || n.textAlign === 'right' ? n.textAlign : 'left';
     const body = (n.text ?? '').trim() ? await renderNoteHtml(n.text ?? '', fileUrl) : '';
     return `<div class="canvas-node canvas-text" style="${style}"><div class="canvas-text-body markdown-preview" style="text-align:${align}">${body}</div></div>`;
   }
@@ -118,7 +126,15 @@ async function renderNode(n: CNode, fileUrl: (p: string) => string): Promise<str
 export async function renderCanvasHtml(raw: string, fileUrl: (p: string) => string): Promise<string> {
   let data: { nodes?: CNode[]; edges?: CEdge[] };
   try { data = JSON.parse(raw); } catch { data = {}; }
-  const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+  // Normalise geometry up front: every downstream use (style attrs, bbox, the
+  // `shifted` arithmetic) then operates on numbers, not attacker-supplied strings.
+  const nodes: CNode[] = (Array.isArray(data.nodes) ? data.nodes : []).map((n) => ({
+    ...n,
+    x: num(n.x),
+    y: num(n.y),
+    width: num(n.width),
+    height: num(n.height),
+  }));
   const edges = Array.isArray(data.edges) ? data.edges : [];
   const bb = bbox(nodes);
   if (!bb) return '<div class="canvas-static-empty">This canvas is empty.</div>';
