@@ -515,6 +515,10 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 }
 .view-header .crumbs { color: var(--text-faint); font-size: 13px; margin: 0 auto; }
 .view-header .crumbs .sep { opacity: .5; margin: 0 4px; }
+.view-header .breadcrumb-link {
+  border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.view-header .breadcrumb-link:hover { color: var(--text-normal); text-decoration: underline; }
 .view-header .grow { flex: 1; }
 .tool-btn { border: 0; background: transparent; color: var(--text-faint); cursor: pointer;
   width: 28px; height: 28px; border-radius: var(--radius-s); display: grid; place-items: center; transition: var(--transition); }

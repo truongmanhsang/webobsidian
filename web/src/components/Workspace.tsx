@@ -343,6 +343,11 @@ export default function Workspace() {
     }
   };
 
+  const revealBreadcrumb = (path: string) => {
+    revealInTree(path);
+    if (isMobile) setMobileDrawer('left');
+  };
+
   return (
     <div className="workspace" onPaste={onPaste} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
       <div className="tab-bar">
@@ -411,12 +416,17 @@ export default function Workspace() {
           <span className="crumbs">
             {activePath === GRAPH_PATH
               ? 'Graph view'
-              : activePath.split('/').map((seg, i) => (
-                  <span key={i}>
-                    {i > 0 && <span className="sep">/</span>}
-                    {seg.replace(/\.(md|markdown)$/, '')}
-                  </span>
-                ))}
+              : activePath.split('/').map((seg, i, segments) => {
+                  const path = segments.slice(0, i + 1).join('/');
+                  return (
+                    <span key={path}>
+                      {i > 0 && <span className="sep">/</span>}
+                      <button className="breadcrumb-link" title={`Reveal ${path} in navigation`} onClick={() => revealBreadcrumb(path)}>
+                        {seg.replace(/\.(md|markdown)$/, '')}
+                      </button>
+                    </span>
+                  );
+                })}
           </span>
           <span className="grow" />
           {isMd && (
