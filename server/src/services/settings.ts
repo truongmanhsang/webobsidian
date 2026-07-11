@@ -79,6 +79,8 @@ const SettingsSchema = z.object({
           'catppuccin-latte',
         ])
         .default('obsidian-light'),
+      // Base interface size in pixels. The client scales its UI from the 14px default.
+      fontSize: z.number().int().min(12).max(20).default(14),
       defaultView: z.enum(['live', 'source', 'reading']).default('live'),
     })
     .default({}),

@@ -37,6 +37,7 @@ export default function App() {
   const [checking, setChecking] = useState(true);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const fontSize = useStore((s) => s.fontSize);
 
   useEffect(() => {
     api
@@ -69,6 +70,7 @@ export default function App() {
       .getSettings()
       .then((s) => {
         setTheme(themeClass(s?.ui?.theme));
+        useStore.getState().setFontSize(s?.ui?.fontSize ?? 14);
         useStore.getState().setShowFormattingToolbar(s?.editor?.showFormattingToolbar === true);
       })
       .catch(() => {});
@@ -157,10 +159,11 @@ export default function App() {
     };
   }, [isMobile, setMobileDrawer]);
 
-  if (checking) return <div className={theme} style={{ height: '100%' }} />;
-  if (!authed) return <div className={theme}><Login onAuthed={() => setAuthed(true)} /></div>;
+  const appStyle = { zoom: fontSize / 14 };
+  if (checking) return <div className={theme} style={{ ...appStyle, height: '100%' }} />;
+  if (!authed) return <div className={theme} style={appStyle}><Login onAuthed={() => setAuthed(true)} /></div>;
   // Signed in but still on the default password → block the app until it's changed.
-  if (mustChangePassword) return <div className={theme}><ForceChangePassword /></div>;
+  if (mustChangePassword) return <div className={theme} style={appStyle}><ForceChangePassword /></div>;
 
   // On mobile the sidebars are overlay drawers (always mounted, slid in/out by
   // CSS), driven by the device-local `mobileDrawer` state — not the persisted
@@ -177,7 +180,7 @@ export default function App() {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={theme}>
+    <div className={theme} style={appStyle}>
       <div className={appCls}>
         <Ribbon onTheme={() => setTheme(theme === 'theme-dark' ? 'theme-light' : 'theme-dark')} />
         {showLeft && <Sidebar />}

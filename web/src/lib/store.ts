@@ -92,6 +92,9 @@ interface AppState {
   /** Whether the Markdown formatting controls (Heading, Bold, Italic, …) are visible. */
   showFormattingToolbar: boolean;
   setShowFormattingToolbar: (v: boolean) => void;
+  /** Base interface font size (14px is the default scale). */
+  fontSize: number;
+  setFontSize: (v: number) => void;
 
   tree: TreeNode | null;
   loadTree: () => Promise<void>;
@@ -314,6 +317,8 @@ export const useStore = create<AppState>()(
       setTheme: (t) => set({ theme: t }),
       showFormattingToolbar: false,
       setShowFormattingToolbar: (showFormattingToolbar) => set({ showFormattingToolbar }),
+      fontSize: 14,
+      setFontSize: (fontSize) => set({ fontSize }),
 
       tree: null,
       loadTree: async () => {

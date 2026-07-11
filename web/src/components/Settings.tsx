@@ -9,6 +9,7 @@ type Section = 'vault' | 'git' | 'api' | 'sharing' | 'plugins' | 'appearance' | 
 export default function Settings() {
   const open = useStore((s) => s.settingsOpen);
   const setOpen = useStore((s) => s.setSettings);
+  const fontSize = useStore((s) => s.fontSize);
   const [section, setSection] = useState<Section>('vault');
   const [settings, setSettings] = useState<any>(null);
 
@@ -18,9 +19,19 @@ export default function Settings() {
 
   if (!open) return null;
 
+  // The app shell scales with the interface font size. Counterbalance that when
+  // sizing this viewport-bound modal, so it always fits and its content scrolls.
+  const fontScale = fontSize / 14;
+  const modalMaxWidth = `${92 / fontScale}vw`;
+  const modalHeight = `${Math.min(72, 88 / fontScale)}vh`;
+
   return (
-    <div className="modal-bg" onClick={() => setOpen(false)}>
-      <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-bg settings-modal-bg" onClick={() => setOpen(false)}>
+      <div
+        className="modal settings-modal"
+        style={{ maxWidth: `min(900px, ${modalMaxWidth})`, height: modalHeight, maxHeight: modalHeight }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="settings-layout">
           <div className="settings-nav">
             {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'editor', 'account', 'about'] as Section[]).map((s) => (
@@ -395,11 +406,23 @@ function Plugins() {
 
 function Appearance({ s }: { s: any }) {
   const [theme, setTheme] = useState(s.ui.theme);
+  const [fontSize, setFontSize] = useState(s.ui.fontSize ?? 14);
   // Apply the theme live (no reload — keeps the Settings dialog open), then persist.
   const save = async (t: string) => {
     setTheme(t);
     useStore.getState().setTheme(themeClass(t));
     await api.putSettings({ ui: { theme: t } });
+  };
+  const saveFontSize = async (value: number) => {
+    const previous = fontSize;
+    setFontSize(value);
+    useStore.getState().setFontSize(value);
+    try {
+      await api.putSettings({ ui: { fontSize: value } });
+    } catch {
+      setFontSize(previous);
+      useStore.getState().setFontSize(previous);
+    }
   };
   return (
     <div>
@@ -416,6 +439,15 @@ function Appearance({ s }: { s: any }) {
             <option value="catppuccin-frappe">Catppuccin Frappé</option>
             <option value="catppuccin-latte">Catppuccin Latte</option>
           </optgroup>
+        </select>
+      </Row>
+      <Row name="Font size" desc="Scales text throughout the app, including the editor, sidebars, and menus.">
+        <select className="text-input" value={fontSize} onChange={(e) => void saveFontSize(Number(e.target.value))}>
+          <option value={12}>Small</option>
+          <option value={14}>Default</option>
+          <option value={16}>Large</option>
+          <option value={18}>Extra large</option>
+          <option value={20}>Huge</option>
         </select>
       </Row>
     </div>
