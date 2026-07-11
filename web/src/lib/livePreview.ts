@@ -2499,8 +2499,69 @@ class TitleWidget extends WidgetType {
   toDOM() {
     const d = document.createElement('div');
     d.className = 'cm-inline-title';
-    d.textContent = this.title;
+    let editing = false;
+
+    const showTitle = () => {
+      d.replaceChildren();
+      d.textContent = this.title;
+      d.title = 'Click to rename note';
+      d.setAttribute('role', 'button');
+      d.tabIndex = 0;
+    };
+    const startEditing = (event: Event) => {
+      if (editing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      editing = true;
+      d.removeAttribute('role');
+      d.removeAttribute('title');
+      d.tabIndex = -1;
+      const input = document.createElement('input');
+      input.className = 'cm-inline-title-input';
+      input.value = this.title;
+      input.size = Math.max(1, this.title.length + 1);
+      input.setAttribute('aria-label', 'Note name');
+      input.addEventListener('input', () => {
+        input.size = Math.max(1, input.value.length + 1);
+      });
+      input.addEventListener('mousedown', (mouseEvent) => mouseEvent.stopPropagation());
+      input.addEventListener('click', (mouseEvent) => mouseEvent.stopPropagation());
+      let finished = false;
+      const finish = (save: boolean) => {
+        if (finished) return;
+        finished = true;
+        editing = false;
+        const name = input.value.trim();
+        showTitle();
+        if (save && name && name !== this.title) {
+          window.dispatchEvent(new CustomEvent('wo-rename-active-note', { detail: { name } }));
+        }
+      };
+      input.addEventListener('keydown', (keyEvent) => {
+        keyEvent.stopPropagation();
+        if (keyEvent.key === 'Enter') { keyEvent.preventDefault(); finish(true); }
+        else if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); finish(false); }
+      });
+      // Like Obsidian's inline title, leaving the field commits the rename;
+      // Escape remains the explicit way to discard an edit.
+      input.addEventListener('blur', () => finish(true));
+      d.replaceChildren(input);
+      input.focus();
+      input.select();
+    };
+    showTitle();
+    d.addEventListener('mousedown', (event) => {
+      if (!editing) event.preventDefault();
+    });
+    d.addEventListener('click', startEditing);
+    d.addEventListener('keydown', (event) => {
+      if (event.target === d && (event.key === 'Enter' || event.key === ' ')) startEditing(event);
+    });
     return d;
+  }
+
+  ignoreEvent() {
+    return false;
   }
 }
 

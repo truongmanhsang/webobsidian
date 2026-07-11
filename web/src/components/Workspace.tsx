@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useStore, GRAPH_PATH, type ContextMenuItem } from '../lib/store';
 import { api } from '../lib/api';
 import Editor from './Editor';
@@ -101,6 +102,62 @@ export default function Workspace() {
   const isShareable = activePath ? /\.(md|markdown|canvas)$/i.test(activePath) : false;
   const canSplit = activePath ? /\.(md|markdown|txt|json|csv|canvas|css|js|ya?ml)$/i.test(activePath) : false;
 
+  const renameNote = (path: string) => {
+    requestPrompt({
+      title: 'Rename or move note',
+      message: 'Enter the new vault-relative path.',
+      initialValue: path,
+      placeholder: 'Folder/note.md',
+      confirmLabel: 'Save',
+      onConfirm: async (value) => {
+        const to = value.trim();
+        if (!to || to === path) return;
+        await api.rename(path, to);
+        closeTab(path);
+        await loadTree();
+        await openFile(to);
+      },
+    });
+  };
+
+  const renameFromInlineTitle = async (path: string, name: string) => {
+    const slash = path.lastIndexOf('/');
+    const dir = slash === -1 ? '' : path.slice(0, slash + 1);
+    const file = slash === -1 ? path : path.slice(slash + 1);
+    const extension = file.match(/\.[^.]+$/)?.[0] ?? '';
+    let stem = name.trim();
+    if (extension && stem.toLowerCase().endsWith(extension.toLowerCase())) {
+      stem = stem.slice(0, -extension.length);
+    }
+    if (!stem || stem.includes('/') || stem.includes('\\')) {
+      notify('Note name cannot contain a path separator');
+      return;
+    }
+    const to = `${dir}${stem}${extension}`;
+    if (to === path) return;
+    try {
+      await api.rename(path, to);
+      closeTab(path);
+      await loadTree();
+      await openFile(to);
+    } catch (e: any) {
+      notify(e?.message ?? 'Rename failed');
+    }
+  };
+
+  // The rendered inline note title lives inside CodeMirror, so it signals the
+  // workspace after the user edits it directly in the editor.
+  useEffect(() => {
+    const handleRename = (event: Event) => {
+      const name = (event as CustomEvent<{ name?: string }>).detail?.name;
+      if (activePath && activePath !== GRAPH_PATH && !activeIsFolder && name) {
+        void renameFromInlineTitle(activePath, name);
+      }
+    };
+    window.addEventListener('wo-rename-active-note', handleRename);
+    return () => window.removeEventListener('wo-rename-active-note', handleRename);
+  }, [activePath, activeIsFolder, closeTab, loadTree, openFile, notify]);
+
   // Obsidian's "Add file property": focus a new property-key field in the
   // Properties widget with the key suggester open (NOT a text prompt). The
   // widget only renders in Live Preview, so switch out of source/reading first.
@@ -152,23 +209,7 @@ export default function Workspace() {
       const renameItem: ContextMenuItem = {
         label: 'Rename…',
         icon: 'pencil',
-        onClick: () => {
-          requestPrompt({
-            title: 'Rename or move note',
-            message: 'Enter the new vault-relative path.',
-            initialValue: path,
-            placeholder: 'Folder/note.md',
-            confirmLabel: 'Save',
-            onConfirm: async (value) => {
-              const to = value.trim();
-              if (!to || to === path) return;
-              await api.rename(path, to);
-              closeTab(path);
-              await loadTree();
-              await openFile(to);
-            },
-          });
-        },
+        onClick: () => renameNote(path),
       };
       const moveItem: ContextMenuItem = {
         label: 'Move file to…',

@@ -571,6 +571,12 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .cm-s-obsidian .cm-comment { color: var(--text-faint); }
 .cm-s-obsidian .cm-math { color: var(--text-muted); font-style: italic; }
 .cm-s-obsidian .cm-footref { color: var(--text-accent); font-size: var(--font-smallest); vertical-align: super; }
+.cm-s-obsidian .cm-inline-title { cursor: text; }
+.cm-s-obsidian .cm-inline-title-input {
+  max-width: 100%; margin: 0; padding: 0; border: 0; outline: none; background: transparent;
+  color: var(--text-normal); font: inherit; font-size: inherit; font-weight: inherit;
+  line-height: inherit; letter-spacing: inherit;
+}
 .cm-s-obsidian .cm-blockid { color: var(--text-faint); font-size: var(--font-smaller); }
 .cm-s-obsidian .cm-url { color: var(--text-accent); text-decoration: underline; }
 /* Tag pill: bg accent@10%, radius 2em, padding 0.25em 0.65em (split begin/end halves) */
