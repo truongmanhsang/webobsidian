@@ -40,7 +40,7 @@ export default function Login({ onAuthed }: { onAuthed: () => void }) {
   };
 
   return (
-    <div className="login-screen">
+    <div className="login-screen theme-dark">
       <form className="login-card" onSubmit={submit}>
         <div className="logo">
           <Icon name="gem" size={40} />
