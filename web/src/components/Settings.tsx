@@ -12,6 +12,7 @@ export default function Settings() {
   const fontSize = useStore((s) => s.fontSize);
   const [section, setSection] = useState<Section>('vault');
   const [settings, setSettings] = useState<any>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) api.getSettings().then(setSettings).catch(() => {});
@@ -26,34 +27,37 @@ export default function Settings() {
   const modalHeight = `${Math.min(72, 88 / fontScale)}vh`;
 
   return (
-    <div className="modal-bg settings-modal-bg" onClick={() => setOpen(false)}>
-      <div
-        className="modal settings-modal"
-        style={{ maxWidth: `min(900px, ${modalMaxWidth})`, height: modalHeight, maxHeight: modalHeight }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="settings-layout">
-          <div className="settings-nav">
-            {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'editor', 'account', 'about'] as Section[]).map((s) => (
-              <button key={s} className={section === s ? 'active' : ''} onClick={() => setSection(s)}>
-                {labels[s]}
-              </button>
-            ))}
-          </div>
-          <div className="settings-content">
-            {settings && section === 'vault' && <VaultSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
-            {settings && section === 'git' && <GitSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
-            {section === 'api' && <ApiKeys />}
-            {section === 'sharing' && <Shares />}
-            {section === 'plugins' && <Plugins />}
-            {settings && section === 'appearance' && <Appearance s={settings} />}
-            {settings && section === 'editor' && <EditorSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
-            {section === 'account' && <AccountSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
-            {section === 'about' && <About />}
+    <>
+      <div className="modal-bg settings-modal-bg" onClick={() => { setOpen(false); setNotice(null); }}>
+        <div
+          className="modal settings-modal"
+          style={{ maxWidth: `min(900px, ${modalMaxWidth})`, height: modalHeight, maxHeight: modalHeight }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="settings-layout">
+            <div className="settings-nav">
+              {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'editor', 'account', 'about'] as Section[]).map((s) => (
+                <button key={s} className={section === s ? 'active' : ''} onClick={() => setSection(s)}>
+                  {labels[s]}
+                </button>
+              ))}
+            </div>
+            <div className="settings-content">
+              {settings && section === 'vault' && <VaultSettings s={settings} reload={() => api.getSettings().then(setSettings)} onNotice={setNotice} />}
+              {settings && section === 'git' && <GitSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
+              {section === 'api' && <ApiKeys />}
+              {section === 'sharing' && <Shares />}
+              {section === 'plugins' && <Plugins />}
+              {settings && section === 'appearance' && <Appearance s={settings} />}
+              {settings && section === 'editor' && <EditorSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
+              {section === 'account' && <AccountSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
+              {section === 'about' && <About />}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      {notice && <NoticeDialog message={notice} onClose={() => setNotice(null)} />}
+    </>
   );
 }
 
@@ -81,14 +85,14 @@ function Row({ name, desc, children }: { name: string; desc?: string; children: 
   );
 }
 
-function VaultSettings({ s, reload }: { s: any; reload: () => void }) {
+function VaultSettings({ s, reload, onNotice }: { s: any; reload: () => void; onNotice: (message: string) => void }) {
   const [path, setPath] = useState(s.vault.path);
   const [deleteMode, setDeleteMode] = useState(s.vault.deleteMode ?? 'trash');
   const [browser, setBrowser] = useState<any>(null);
   const save = async () => {
     await api.putSettings({ vault: { path } });
     await reload();
-    alert('Vault path saved. Reindex from the command palette if needed.');
+    onNotice('Vault path saved. Reindex from the command palette if needed.');
   };
   const saveDeleteMode = async (mode: string) => {
     setDeleteMode(mode);
@@ -137,6 +141,20 @@ function VaultSettings({ s, reload }: { s: any; reload: () => void }) {
           <option value="permanent">Permanently delete</option>
         </select>
       </Row>
+    </div>
+  );
+}
+
+function NoticeDialog({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="modal-bg notice-modal-bg" onClick={onClose}>
+      <div className="modal notice-dialog" role="dialog" aria-modal="true" aria-labelledby="notice-title" onClick={(e) => e.stopPropagation()}>
+        <h2 id="notice-title">Saved</h2>
+        <p>{message}</p>
+        <div className="notice-actions">
+          <button className="btn" autoFocus onClick={onClose}>OK</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -271,6 +289,8 @@ function ApiKeys() {
 
 function Shares() {
   const notify = useStore((s) => s.notify);
+  const requestConfirm = useStore((s) => s.requestConfirm);
+  const requestPrompt = useStore((s) => s.requestPrompt);
   const openFile = useStore((s) => s.openFile);
   const setOpen = useStore((s) => s.setSettings);
   // Shared with the store so the file tree's globe badges refresh on changes.
@@ -288,21 +308,31 @@ function Shares() {
     await api.setShareEnabled(s.id, !s.enabled);
     load();
   };
-  const remove = async (s: any) => {
-    if (!confirm(`Delete the public link for "${s.path}"? The URL stops working permanently.`)) return;
-    await api.deleteShare(s.id);
-    load();
+  const remove = (s: any) => {
+    requestConfirm({
+      title: 'Delete public link?',
+      message: `The public link for “${s.path}” will stop working permanently.`,
+      confirmLabel: 'Delete link',
+      danger: true,
+      onConfirm: async () => {
+        await api.deleteShare(s.id);
+        await load();
+      },
+    });
   };
-  const setPassword = async (s: any) => {
-    const pw = prompt(
-      s.hasPassword
-        ? 'New password for this link (leave empty to REMOVE the password):'
-        : 'Password for this link:',
-    );
-    if (pw === null) return;
-    await api.setSharePassword(s.id, pw || null);
-    notify(pw ? 'Password set' : 'Password removed');
-    load();
+  const setPassword = (s: any) => {
+    requestPrompt({
+      title: s.hasPassword ? 'Change share password' : 'Protect public link',
+      message: s.hasPassword ? 'Enter a new password. Leave it blank to remove protection.' : 'Enter a password required to view this public link.',
+      inputType: 'password',
+      placeholder: 'Password',
+      confirmLabel: 'Save password',
+      onConfirm: async (pw) => {
+        await api.setSharePassword(s.id, pw || null);
+        notify(pw ? 'Password set' : 'Password removed');
+        await load();
+      },
+    });
   };
 
   const q = query.trim().toLowerCase();

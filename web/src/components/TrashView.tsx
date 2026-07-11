@@ -10,6 +10,7 @@ export default function TrashView() {
   const close = useStore((s) => s.setTrash);
   const notify = useStore((s) => s.notify);
   const loadTree = useStore((s) => s.loadTree);
+  const requestConfirm = useStore((s) => s.requestConfirm);
 
   const [items, setItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,9 +46,8 @@ export default function TrashView() {
     }
   };
 
-  const remove = async (it: TrashItem) => {
+  const deleteItem = async (it: TrashItem) => {
     if (busy) return;
-    if (!confirm(`Permanently delete "${it.name}"? This cannot be undone.`)) return;
     setBusy(true);
     try {
       await api.deleteTrashItem(it.path);
@@ -59,10 +59,19 @@ export default function TrashView() {
       setBusy(false);
     }
   };
+  const remove = (it: TrashItem) => {
+    if (busy) return;
+    requestConfirm({
+      title: `Permanently delete “${it.name}”?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete permanently',
+      danger: true,
+      onConfirm: () => deleteItem(it),
+    });
+  };
 
-  const empty = async () => {
+  const emptyTrash = async () => {
     if (busy || items.length === 0) return;
-    if (!confirm(`Empty trash? ${items.length} item(s) will be permanently deleted.`)) return;
     setBusy(true);
     try {
       await api.emptyTrash();
@@ -73,6 +82,16 @@ export default function TrashView() {
     } finally {
       setBusy(false);
     }
+  };
+  const empty = () => {
+    if (busy || items.length === 0) return;
+    requestConfirm({
+      title: 'Empty trash?',
+      message: `${items.length} item(s) will be permanently deleted. This cannot be undone.`,
+      confirmLabel: 'Empty trash',
+      danger: true,
+      onConfirm: emptyTrash,
+    });
   };
 
   const fmtSize = (n: number) => {

@@ -14,6 +14,8 @@ export default function ShareDialog() {
   const shares = useStore((s) => s.shares);
   const loadShares = useStore((s) => s.loadShares);
   const notify = useStore((s) => s.notify);
+  const requestConfirm = useStore((s) => s.requestConfirm);
+  const requestPrompt = useStore((s) => s.requestPrompt);
 
   useEffect(() => {
     if (path) loadShares();
@@ -38,24 +40,34 @@ export default function ShareDialog() {
     navigator.clipboard?.writeText(url).catch(() => {});
     notify('Public link copied');
   };
-  const password = async () => {
+  const password = () => {
     if (!share) return;
-    const pw = prompt(
-      share.hasPassword
-        ? 'New password for this link (leave empty to REMOVE the password):'
-        : 'Password for this link:',
-    );
-    if (pw === null) return;
-    await api.setSharePassword(share.id, pw || null);
-    await loadShares();
-    notify(pw ? 'Password set' : 'Password removed');
+    requestPrompt({
+      title: share.hasPassword ? 'Change share password' : 'Protect public link',
+      message: share.hasPassword ? 'Enter a new password. Leave it blank to remove protection.' : 'Enter a password required to view this public link.',
+      inputType: 'password',
+      placeholder: 'Password',
+      confirmLabel: 'Save password',
+      onConfirm: async (pw) => {
+        await api.setSharePassword(share.id, pw || null);
+        await loadShares();
+        notify(pw ? 'Password set' : 'Password removed');
+      },
+    });
   };
-  const remove = async () => {
+  const remove = () => {
     if (!share) return;
-    if (!confirm('Delete this public link? The URL stops working permanently.')) return;
-    await api.deleteShare(share.id);
-    await loadShares();
-    notify('Public link deleted');
+    requestConfirm({
+      title: 'Delete public link?',
+      message: 'The URL will stop working permanently.',
+      confirmLabel: 'Delete link',
+      danger: true,
+      onConfirm: async () => {
+        await api.deleteShare(share.id);
+        await loadShares();
+        notify('Public link deleted');
+      },
+    });
   };
 
   return (

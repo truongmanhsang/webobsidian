@@ -11,6 +11,7 @@ export default function VersionHistory() {
   const notify = useStore((s) => s.notify);
   const openFile = useStore((s) => s.openFile);
   const activePath = useStore((s) => s.activePath);
+  const requestConfirm = useStore((s) => s.requestConfirm);
 
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -44,9 +45,8 @@ export default function VersionHistory() {
 
   if (!path) return null;
 
-  const restore = async () => {
+  const restoreVersion = async () => {
     if (!selected) return;
-    if (!confirm('Restore this version? The current content will be overwritten.')) return;
     try {
       await api.write(path, preview);
       if (path === activePath) await openFile(path);
@@ -55,6 +55,16 @@ export default function VersionHistory() {
     } catch (e: any) {
       notify(e.message || 'Restore failed');
     }
+  };
+  const restore = () => {
+    if (!selected) return;
+    requestConfirm({
+      title: 'Restore this version?',
+      message: 'The current note content will be overwritten.',
+      confirmLabel: 'Restore',
+      danger: true,
+      onConfirm: restoreVersion,
+    });
   };
 
   const fmtDate = (iso: string) => {

@@ -151,6 +151,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
   const toggleBookmark = useStore((s) => s.toggleBookmark);
   const bookmarks = useStore((s) => s.bookmarks);
   const notify = useStore((s) => s.notify);
+  const requestConfirm = useStore((s) => s.requestConfirm);
   const setShareDialog = useStore((s) => s.setShareDialog);
   const shares = useStore((s) => s.shares);
   const isSelected = useStore((s) => s.selected.includes(node.path));
@@ -190,9 +191,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     else openFile(node.path);
   };
 
-  const doDeleteMany = async () => {
-    const paths = pruneDescendants(useStore.getState().selected);
-    if (!paths.length || !confirm(`Delete ${paths.length} item${paths.length > 1 ? 's' : ''}?`)) return;
+  const deleteMany = async (paths: string[]) => {
     let n = 0;
     for (const p of paths) {
       const r = await api.remove(p).catch(() => null);
@@ -202,16 +201,33 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     await loadTree();
     notify(`Deleted ${n} item${n > 1 ? 's' : ''}`);
   };
+  const doDeleteMany = () => {
+    const paths = pruneDescendants(useStore.getState().selected);
+    if (!paths.length) return;
+    requestConfirm({
+      title: `Delete ${paths.length} item${paths.length > 1 ? 's' : ''}?`,
+      message: 'The selected items will be moved to trash or permanently deleted, depending on your vault settings.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => deleteMany(paths),
+    });
+  };
   const doMoveMany = () => setMovePath(useStore.getState().selected);
 
   const doRename = () => setRenamingPath(node.path);
-  const doDelete = async () => {
-    if (confirm(`Delete "${node.name}"?`)) {
+  const doDelete = () => {
+    requestConfirm({
+      title: `Delete “${node.name}”?`,
+      message: 'This item will be moved to trash or permanently deleted, depending on your vault settings.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
       const r = await api.remove(node.path);
       closeTab(node.path);
       await loadTree();
       notify(r.deleted ? 'Deleted permanently' : 'Moved to trash');
-    }
+      },
+    });
   };
 
   const doCopy = async () => {

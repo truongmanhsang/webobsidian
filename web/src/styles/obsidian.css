@@ -1058,6 +1058,22 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .setting-row .info .name { font-weight: 600; }
 .setting-row .info .desc { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
 .setting-row .control { flex-shrink: 0; }
+.notice-modal-bg { place-items: center; padding: 16px; z-index: 110; }
+.notice-dialog { width: 420px; padding: 22px; overflow: visible; }
+.notice-dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.notice-dialog p { margin: 0; color: var(--text-muted); line-height: 1.5; }
+.notice-actions { display: flex; justify-content: flex-end; margin-top: 20px; }
+.confirm-modal-bg { place-items: center; padding: 16px; z-index: 120; }
+.confirm-dialog { width: 420px; padding: 22px; overflow: visible; }
+.confirm-dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.confirm-dialog p { margin: 0; color: var(--text-muted); line-height: 1.5; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.prompt-modal-bg { place-items: center; padding: 16px; z-index: 120; }
+.prompt-dialog { width: 420px; padding: 22px; overflow: visible; }
+.prompt-dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.prompt-dialog p { margin: 0 0 14px; color: var(--text-muted); line-height: 1.5; }
+.prompt-dialog .text-input { width: 100%; }
+.prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .btn { background: var(--interactive-accent); color: var(--text-on-accent); border: 0; padding: 7px 14px;
   border-radius: var(--radius); cursor: pointer; font-size: 13px; }
 .btn:hover { background: var(--interactive-accent-hover); }

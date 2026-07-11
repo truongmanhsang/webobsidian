@@ -73,6 +73,8 @@ export default function Workspace() {
   const content = useStore((s) => s.content);
   const setContent = useStore((s) => s.setContent);
   const notify = useStore((s) => s.notify);
+  const requestConfirm = useStore((s) => s.requestConfirm);
+  const requestPrompt = useStore((s) => s.requestPrompt);
   const toggleLeft = useStore((s) => s.toggleLeft);
   const toggleRight = useStore((s) => s.toggleRight);
   const setMobileDrawer = useStore((s) => s.setMobileDrawer);
@@ -150,14 +152,22 @@ export default function Workspace() {
       const renameItem: ContextMenuItem = {
         label: 'Rename…',
         icon: 'pencil',
-        onClick: async () => {
-          const to = prompt('Rename / move to (vault-relative path):', path);
-          if (to && to !== path) {
-            await api.rename(path, to);
-            closeTab(path);
-            await loadTree();
-            await openFile(to);
-          }
+        onClick: () => {
+          requestPrompt({
+            title: 'Rename or move note',
+            message: 'Enter the new vault-relative path.',
+            initialValue: path,
+            placeholder: 'Folder/note.md',
+            confirmLabel: 'Save',
+            onConfirm: async (value) => {
+              const to = value.trim();
+              if (!to || to === path) return;
+              await api.rename(path, to);
+              closeTab(path);
+              await loadTree();
+              await openFile(to);
+            },
+          });
         },
       };
       const moveItem: ContextMenuItem = {
@@ -246,13 +256,19 @@ export default function Workspace() {
           label: 'Delete',
           danger: true,
           icon: 'trash',
-          onClick: async () => {
-            if (confirm(`Delete "${baseName}"?`)) {
+          onClick: () => {
+            requestConfirm({
+              title: `Delete “${baseName}”?`,
+              message: 'This note will be moved to trash or permanently deleted, depending on your vault settings.',
+              confirmLabel: 'Delete',
+              danger: true,
+              onConfirm: async () => {
               const r = await api.remove(path);
               closeTab(path);
               await loadTree();
               notify(r.deleted ? 'Deleted permanently' : 'Moved to trash');
-            }
+              },
+            });
           },
         },
       ];

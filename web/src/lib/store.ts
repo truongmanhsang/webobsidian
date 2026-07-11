@@ -80,6 +80,26 @@ export interface ContextMenuState {
   items: ContextMenuItem[];
 }
 
+/** An app-styled confirmation request. Kept outside persisted workspace state. */
+export interface ConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
+
+/** An app-styled text/password input request. Kept outside persisted workspace state. */
+export interface PromptRequest {
+  title: string;
+  message: string;
+  initialValue?: string;
+  placeholder?: string;
+  inputType?: 'text' | 'password';
+  confirmLabel?: string;
+  onConfirm: (value: string) => void | Promise<void>;
+}
+
 interface AppState {
   authed: boolean;
   setAuthed: (v: boolean) => void;
@@ -182,6 +202,12 @@ interface AppState {
   contextMenu: ContextMenuState | null;
   openContextMenu: (m: ContextMenuState) => void;
   closeContextMenu: () => void;
+  confirmRequest: ConfirmRequest | null;
+  requestConfirm: (request: ConfirmRequest) => void;
+  closeConfirm: () => void;
+  promptRequest: PromptRequest | null;
+  requestPrompt: (request: PromptRequest) => void;
+  closePrompt: () => void;
 
   /** Public share links (FR-10) — cached so the tree can badge shared notes. */
   shares: ShareRecord[];
@@ -449,6 +475,12 @@ export const useStore = create<AppState>()(
       contextMenu: null,
       openContextMenu: (m) => set({ contextMenu: m }),
       closeContextMenu: () => set({ contextMenu: null }),
+      confirmRequest: null,
+      requestConfirm: (confirmRequest) => set({ confirmRequest }),
+      closeConfirm: () => set({ confirmRequest: null }),
+      promptRequest: null,
+      requestPrompt: (promptRequest) => set({ promptRequest }),
+      closePrompt: () => set({ promptRequest: null }),
 
       shares: [],
       loadShares: async () => {
