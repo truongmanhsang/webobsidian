@@ -89,6 +89,9 @@ interface AppState {
   /** Active theme wrapper class (e.g. 'theme-dark', 'theme-ctp-mocha'). */
   theme: string;
   setTheme: (t: string) => void;
+  /** Whether the Markdown formatting controls (Heading, Bold, Italic, …) are visible. */
+  showFormattingToolbar: boolean;
+  setShowFormattingToolbar: (v: boolean) => void;
 
   tree: TreeNode | null;
   loadTree: () => Promise<void>;
@@ -309,6 +312,8 @@ export const useStore = create<AppState>()(
       setMustChangePassword: (v) => set({ mustChangePassword: v }),
       theme: 'theme-light',
       setTheme: (t) => set({ theme: t }),
+      showFormattingToolbar: false,
+      setShowFormattingToolbar: (showFormattingToolbar) => set({ showFormattingToolbar }),
 
       tree: null,
       loadTree: async () => {

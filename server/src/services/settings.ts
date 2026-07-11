@@ -82,6 +82,12 @@ const SettingsSchema = z.object({
       defaultView: z.enum(['live', 'source', 'reading']).default('live'),
     })
     .default({}),
+  editor: z
+    .object({
+      // Desktop/mobile Markdown formatting controls (Heading, Bold, Italic, …).
+      showFormattingToolbar: z.boolean().default(false),
+    })
+    .default({}),
   plugins: z
     .object({
       enabled: z.array(z.string()).default([]),

@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { themeClass } from '../lib/theme';
 import Icon from './Icon';
 
-type Section = 'vault' | 'git' | 'api' | 'sharing' | 'plugins' | 'appearance' | 'account' | 'about';
+type Section = 'vault' | 'git' | 'api' | 'sharing' | 'plugins' | 'appearance' | 'editor' | 'account' | 'about';
 
 export default function Settings() {
   const open = useStore((s) => s.settingsOpen);
@@ -23,7 +23,7 @@ export default function Settings() {
       <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
         <div className="settings-layout">
           <div className="settings-nav">
-            {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'account', 'about'] as Section[]).map((s) => (
+            {(['vault', 'git', 'api', 'sharing', 'plugins', 'appearance', 'editor', 'account', 'about'] as Section[]).map((s) => (
               <button key={s} className={section === s ? 'active' : ''} onClick={() => setSection(s)}>
                 {labels[s]}
               </button>
@@ -36,6 +36,7 @@ export default function Settings() {
             {section === 'sharing' && <Shares />}
             {section === 'plugins' && <Plugins />}
             {settings && section === 'appearance' && <Appearance s={settings} />}
+            {settings && section === 'editor' && <EditorSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
             {section === 'account' && <AccountSettings s={settings} reload={() => api.getSettings().then(setSettings)} />}
             {section === 'about' && <About />}
           </div>
@@ -52,6 +53,7 @@ const labels: Record<Section, string> = {
   sharing: 'Sharing',
   plugins: 'Community Plugins',
   appearance: 'Appearance',
+  editor: 'Editor',
   account: 'Account',
   about: 'About',
 };
@@ -415,6 +417,36 @@ function Appearance({ s }: { s: any }) {
             <option value="catppuccin-latte">Catppuccin Latte</option>
           </optgroup>
         </select>
+      </Row>
+    </div>
+  );
+}
+
+function EditorSettings({ s, reload }: { s: any; reload: () => void }) {
+  const [showFormattingToolbar, setShowFormattingToolbar] = useState(s.editor?.showFormattingToolbar === true);
+
+  const saveFormattingToolbar = async (show: boolean) => {
+    setShowFormattingToolbar(show);
+    useStore.getState().setShowFormattingToolbar(show);
+    try {
+      await api.putSettings({ editor: { showFormattingToolbar: show } });
+      await reload();
+    } catch {
+      // Keep the UI and toolbar consistent if the setting cannot be persisted.
+      setShowFormattingToolbar(!show);
+      useStore.getState().setShowFormattingToolbar(!show);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Editor</h2>
+      <Row name="Show formatting toolbar" desc="Show the Heading, Bold, Italic, and other Markdown controls above the editor.">
+        <input
+          type="checkbox"
+          checked={showFormattingToolbar}
+          onChange={(e) => void saveFormattingToolbar(e.target.checked)}
+        />
       </Row>
     </div>
   );

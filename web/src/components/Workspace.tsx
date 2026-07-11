@@ -58,6 +58,7 @@ function EditorPane() {
 export default function Workspace() {
   const tabs = useStore((s) => s.tabs);
   const activePath = useStore((s) => s.activePath);
+  const showFormattingToolbar = useStore((s) => s.showFormattingToolbar);
   const openFile = useStore((s) => s.openFile);
   const closeTab = useStore((s) => s.closeTab);
   const dirty = useStore((s) => s.dirty);
@@ -393,7 +394,7 @@ export default function Workspace() {
         </div>
       )}
 
-      {!isMobile && activePath && activePath !== GRAPH_PATH && isMd && viewMode !== 'reading' && (
+      {!isMobile && showFormattingToolbar && activePath && activePath !== GRAPH_PATH && isMd && viewMode !== 'reading' && (
         <FormatToolbar />
       )}
 
@@ -436,7 +437,7 @@ export default function Workspace() {
           </div>
         )}
       </div>
-      {isMobile && activePath && activePath !== GRAPH_PATH && isMd && viewMode !== 'reading' && (
+      {isMobile && showFormattingToolbar && activePath && activePath !== GRAPH_PATH && isMd && viewMode !== 'reading' && (
         <FormatToolbar mobile />
       )}
       <StatusBar />

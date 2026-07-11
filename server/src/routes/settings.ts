@@ -40,6 +40,9 @@ settingsRouter.put(
       }
       if (body.search) Object.assign(d.search, body.search);
       if (body.ui) Object.assign(d.ui, body.ui);
+      if (body.editor && typeof body.editor.showFormattingToolbar === 'boolean') {
+        d.editor.showFormattingToolbar = body.editor.showFormattingToolbar;
+      }
       if (body.api && typeof body.api.rateLimitPerMin === 'number') {
         d.api.rateLimitPerMin = body.api.rateLimitPerMin;
       }

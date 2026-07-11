@@ -67,7 +67,10 @@ export default function App() {
       .catch(() => {});
     api
       .getSettings()
-      .then((s) => setTheme(themeClass(s?.ui?.theme)))
+      .then((s) => {
+        setTheme(themeClass(s?.ui?.theme));
+        useStore.getState().setShowFormattingToolbar(s?.editor?.showFormattingToolbar === true);
+      })
       .catch(() => {});
     useStore.getState().loadShares(); // badge shared notes in the file tree
     loadPlugins().catch(() => {});
