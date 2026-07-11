@@ -234,10 +234,20 @@ export default function Editor() {
     });
   };
 
-  // (Re)create the view when the active file changes.
+  // Create a new view when the active file content changes. A path-only rename
+  // keeps this editor instance (and its cursor/scroll/history) alive.
   useEffect(() => {
     if (!host.current) return;
-    view.current?.destroy();
+
+    const existing = view.current;
+    if (existing && existing.state.doc.toString() === content) {
+      existing.dispatch({ effects: setNoteTitle.of(titleOf(activePath)) });
+      return;
+    }
+    if (existing) {
+      setActiveEditor(null);
+      existing.destroy();
+    }
 
     const isMd = activePath ? /\.(md|markdown)$/i.test(activePath) : false;
     // Place the caret after the frontmatter so Properties render immediately.
@@ -299,12 +309,18 @@ export default function Editor() {
     view.current = v;
     setActiveEditor(v);
     v.focus();
-    return () => {
-      setActiveEditor(null);
-      v.destroy();
-    };
+    // This effect deliberately does not tear down on an active-path change:
+    // a rename updates only the title while retaining the editor's state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePath]);
+
+  useEffect(() => {
+    return () => {
+      setActiveEditor(null);
+      view.current?.destroy();
+      view.current = null;
+    };
+  }, []);
 
   // Sync the editor doc when `content` changes from OUTSIDE the editor — e.g. the
   // active note's content arrives asynchronously after reload/hydrate, or is

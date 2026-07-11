@@ -226,6 +226,8 @@ interface AppState {
   notify: (msg: string, ms?: number) => void;
 
   openFile: (path: string) => Promise<void>;
+  /** Update every open-workspace reference after a server-side file rename, without reloading its content. */
+  renameOpenFile: (from: string, to: string) => void;
   openWikilink: (target: string) => Promise<void>;
   closeTab: (path: string) => void;
   setContent: (c: string) => void;
@@ -542,6 +544,27 @@ export const useStore = create<AppState>()(
           return { tabs, activePath: path, content, dirty: false, recent, ...pushHistory(s, path) };
         });
       },
+
+      renameOpenFile: (from, to) =>
+        set((s) => {
+          const rename = (path: string) => (path === from ? to : path);
+          return {
+            tabs: s.tabs.map((tab) =>
+              tab.path === from ? { path: to, title: to.split('/').pop() ?? to } : tab,
+            ),
+            activePath: s.activePath === from ? to : s.activePath,
+            splitPath: s.splitPath === from ? to : s.splitPath,
+            recent: s.recent.map(rename),
+            bookmarks: s.bookmarks.map(rename),
+            history: s.history.map(rename),
+            selected: s.selected.map(rename),
+            selectAnchor: s.selectAnchor === from ? to : s.selectAnchor,
+            renamingPath: s.renamingPath === from ? to : s.renamingPath,
+            clipboard: s.clipboard?.path === from ? { ...s.clipboard, path: to } : s.clipboard,
+            shareDialogPath: s.shareDialogPath === from ? to : s.shareDialogPath,
+            versionHistoryPath: s.versionHistoryPath === from ? to : s.versionHistoryPath,
+          };
+        }),
 
       openWikilink: async (target) => {
         try {

@@ -61,6 +61,7 @@ export default function Workspace() {
   const activePath = useStore((s) => s.activePath);
   const showFormattingToolbar = useStore((s) => s.showFormattingToolbar);
   const openFile = useStore((s) => s.openFile);
+  const renameOpenFile = useStore((s) => s.renameOpenFile);
   const closeTab = useStore((s) => s.closeTab);
   const dirty = useStore((s) => s.dirty);
   const viewMode = useStore((s) => s.viewMode);
@@ -113,9 +114,8 @@ export default function Workspace() {
         const to = value.trim();
         if (!to || to === path) return;
         await api.rename(path, to);
-        closeTab(path);
+        renameOpenFile(path, to);
         await loadTree();
-        await openFile(to);
       },
     });
   };
@@ -137,9 +137,8 @@ export default function Workspace() {
     if (to === path) return;
     try {
       await api.rename(path, to);
-      closeTab(path);
+      renameOpenFile(path, to);
       await loadTree();
-      await openFile(to);
     } catch (e: any) {
       notify(e?.message ?? 'Rename failed');
     }
@@ -156,7 +155,7 @@ export default function Workspace() {
     };
     window.addEventListener('wo-rename-active-note', handleRename);
     return () => window.removeEventListener('wo-rename-active-note', handleRename);
-  }, [activePath, activeIsFolder, closeTab, loadTree, openFile, notify]);
+  }, [activePath, activeIsFolder, loadTree, renameOpenFile, notify]);
 
   // Obsidian's "Add file property": focus a new property-key field in the
   // Properties widget with the key suggester open (NOT a text prompt). The

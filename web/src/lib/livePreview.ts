@@ -2501,9 +2501,9 @@ class TitleWidget extends WidgetType {
     d.className = 'cm-inline-title';
     let editing = false;
 
-    const showTitle = () => {
+    const showTitle = (title = this.title) => {
       d.replaceChildren();
-      d.textContent = this.title;
+      d.textContent = title;
       d.title = 'Click to rename note';
       d.setAttribute('role', 'button');
       d.tabIndex = 0;
@@ -2532,9 +2532,13 @@ class TitleWidget extends WidgetType {
         finished = true;
         editing = false;
         const name = input.value.trim();
-        showTitle();
         if (save && name && name !== this.title) {
+          // Keep the edited label visible while the asynchronous filesystem
+          // rename updates the workspace path, avoiding a flash of the old name.
+          showTitle(name);
           window.dispatchEvent(new CustomEvent('wo-rename-active-note', { detail: { name } }));
+        } else {
+          showTitle();
         }
       };
       input.addEventListener('keydown', (keyEvent) => {
